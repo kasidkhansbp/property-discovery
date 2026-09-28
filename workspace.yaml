@@ -1,0 +1,7 @@
+# Tells `dagster dev` where to start: load definitions.py from the repo root.
+# working_directory puts the repo root on sys.path so the module and its
+# `services.ingestion.*` imports resolve no matter where you launch from.
+load_from:
+  - python_file:
+      relative_path: definitions.py
+      working_directory: .
