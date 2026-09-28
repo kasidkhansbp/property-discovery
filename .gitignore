@@ -1,0 +1,39 @@
+# ---- Python / virtualenv ----
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Dagster ----
+.tmp_dagster_home_*/
+tmp_dagster_home_*/
+dagster_home/
+*.dagster/
+
+# ---- Secrets / config ----
+.env
+.env.*
+!.env.example
+
+# ---- Data (large source files live in R2, not git) ----
+data/raw/
+data/clean/
+*.parquet
+*.duckdb
+
+# ---- Frontend (Node) ----
+node_modules/
+frontend/dist/
+frontend/build/
+.vite/
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
