@@ -1,0 +1,6 @@
+# Development / test-only dependencies. Install with:
+#   python -m pip install -r requirements-dev.txt
+# (The runtime deps in requirements.txt are still needed to import the package.)
+-r requirements.txt
+
+pytest
