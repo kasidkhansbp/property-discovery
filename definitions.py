@@ -1,24 +1,33 @@
 """Root Dagster entry point — the single 'table of contents' Dagster loads.
 
-This does NOT merge any data. It only merges the CODE definitions (assets +
+This does NOT merge any data. It only merges the CODE definitions (assets, jobs,
 schedules) from each ingestion service so Dagster can see them all in one place.
 Each service still runs independently and writes to its own separate table.
 
-To add a service later: import its `defs` and add it to the merge() call.
+We can't use `dg.Definitions.merge` directly: each service is self-contained and
+declares its own `r2`/`postgres` resources (so its own tests can resolve its
+jobs), and `merge` is identity-strict on shared resource keys — it rejects two
+equal-but-distinct resource instances under the same key. So we combine the
+component lists by hand and supply the shared resources once. The services are
+configured from the same env vars, so a single `r2`/`postgres` pair serves both;
+`epc` contributes its extra `epc` credential.
+
+To add a service later: import it and fold its `defs` into the three `[*...]`
+lists (and its resources into the mapping).
 """
 
 from __future__ import annotations
 
 import dagster as dg
 
-# Import the modules (not their `defs` names) so only ONE Definitions object
-# lives at this module's scope — Dagster requires exactly one.
-from services.ingestion import land_registry
+from services.ingestion import epc, land_registry
 
-# When epc is ready, uncomment:
-# from services.ingestion import epc
+_services = [land_registry.defs, epc.defs]
 
-defs = dg.Definitions.merge(
-    land_registry.defs,
-    # epc.defs,
+defs = dg.Definitions(
+    assets=[a for d in _services for a in (d.assets or [])],
+    jobs=[j for d in _services for j in (d.jobs or [])],
+    schedules=[s for d in _services for s in (d.schedules or [])],
+    # r2/postgres are identically configured across services; epc adds `epc`.
+    resources={**land_registry.defs.resources, **epc.defs.resources},
 )
