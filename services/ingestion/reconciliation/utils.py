@@ -42,7 +42,9 @@ from dagster import AssetExecutionContext
 
 from .resources import PostgresResource, R2Resource
 from .schema import (
+    ENRICHMENT_COLUMN_TYPES,
     MASTER_COLUMNS,
+    MATCH_COLUMNS,
     MATCH_EXACT,
     MATCH_FUZZY,
     MATCH_UNMATCHED_LR,
@@ -54,6 +56,10 @@ from .schema import (
 # Source tables (loaded by the land_registry and epc services, respectively).
 LR_TABLE = "land_registry_sales"
 EPC_TABLE = "epc_domestic_certificates"
+
+# Reference table for coordinate enrichment (loaded by the os_open_uprn service).
+# Its uprn PK is a bigint; property_uprn_mapping.uprn is text, so the join casts.
+OS_OPEN_UPRN_TABLE = "os_open_uprn"
 
 STAGING_TABLE = "property_uprn_mapping_staging"
 
@@ -97,6 +103,16 @@ def ensure_target_table(postgres: PostgresResource) -> None:
     """
     with postgres.connect() as conn, conn.cursor() as cur:
         cur.execute(f"CREATE TABLE IF NOT EXISTS {TARGET_TABLE} (\n    {PG_DDL_COLS}\n);")
+        # Self-heal a table created before the enrichment columns existed: add
+        # any that are missing (nullable, so this is a metadata-only change even
+        # on a 40M-row table — no rewrite). Adding the columns does NOT backfill
+        # history; the incremental load's ON CONFLICT DO NOTHING protects
+        # existing rows, so run scripts/backfill_property_uprn_mapping_enrichment.py
+        # (or a full rebuild) once to populate the rows already in the table.
+        for name, ddl in ENRICHMENT_COLUMN_TYPES.items():
+            cur.execute(
+                f"ALTER TABLE {TARGET_TABLE} ADD COLUMN IF NOT EXISTS {name} {ddl};"
+            )
         cur.execute(
             f"CREATE UNIQUE INDEX IF NOT EXISTS {TARGET_TABLE}_txn_uidx "
             f"ON {TARGET_TABLE} (transaction_id) WHERE transaction_id IS NOT NULL;"
@@ -361,16 +377,64 @@ def build_master_parquet(
             """
         )
 
-        cols = ", ".join(MASTER_COLUMNS)
+        # Assemble the match columns for every covered row, then enrich. Keeping
+        # the coverage union and the enrichment join in separate steps means the
+        # match logic above is untouched — enrichment is a pure LEFT-JOIN tail.
+        match_cols = ", ".join(MATCH_COLUMNS)
+        con.execute(
+            f"""
+            CREATE TABLE coverage AS
+            SELECT {match_cols} FROM matched
+            UNION ALL SELECT {match_cols} FROM unmatched_lr
+            UNION ALL SELECT {match_cols} FROM unmatched_uprn;
+            """
+        )
+
+        # Enrichment: everything keyed by uprn. Coordinates come from
+        # os_open_uprn (its PK is a bigint, so cast; TRY_CAST yields NULL for any
+        # non-numeric uprn rather than erroring). postcode + constituent_country
+        # come from EPC, deduplicated to the latest certificate per uprn (a uprn
+        # can hold several). district/county have no clean EPC source and are
+        # written as typed NULLs here, to be filled from land_registry_sales in a
+        # later pass. All joins are LEFT, so an UNMATCHED_LR row (no uprn) simply
+        # keeps NULL enrichment.
+        _attach_pg(con, postgres)
         con.execute(
             f"""
             COPY (
-                SELECT {cols} FROM matched
-                UNION ALL SELECT {cols} FROM unmatched_lr
-                UNION ALL SELECT {cols} FROM unmatched_uprn
+                SELECT
+                    c.transaction_id,
+                    c.uprn,
+                    c.match_score,
+                    c.match_type,
+                    o.latitude,
+                    o.longitude,
+                    o.x_coordinate,
+                    o.y_coordinate,
+                    e.postcode,
+                    CAST(NULL AS VARCHAR) AS district,
+                    CAST(NULL AS VARCHAR) AS county,
+                    e.country AS constituent_country
+                FROM coverage c
+                LEFT JOIN pg.{OS_OPEN_UPRN_TABLE} o
+                       ON o.uprn = TRY_CAST(c.uprn AS BIGINT)
+                LEFT JOIN (
+                    SELECT uprn, postcode, country FROM (
+                        SELECT uprn, postcode, country,
+                               row_number() OVER (
+                                   PARTITION BY uprn
+                                   ORDER BY lodgement_date DESC NULLS LAST,
+                                            inspection_date DESC NULLS LAST,
+                                            certificate_number
+                               ) AS rn
+                        FROM pg.{EPC_TABLE}
+                        WHERE uprn IS NOT NULL AND trim(uprn) <> ''
+                    ) WHERE rn = 1
+                ) e ON e.uprn = c.uprn
             ) TO '{r2.s3_url(master_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);
             """
         )
+        con.execute("DETACH pg;")
 
         n_exact, n_fuzzy, n_unmatched_lr, n_unmatched_uprn = con.execute(
             "SELECT (SELECT count(*) FROM exact_matches),"

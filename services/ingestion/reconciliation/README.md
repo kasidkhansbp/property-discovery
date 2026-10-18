@@ -82,3 +82,34 @@ during the operation, same as staging+target coexisting today); it should be
 load logic in `utils.py`, Dagster metadata emission in the `assets.py` wrapper;
 ad-hoc admin queries (`pg_stat_activity`, `pg_locks`) are ops tooling, not these
 modules.
+
+## TODO: carry the matched address strings in the table
+
+Today `property_uprn_mapping` stores only `transaction_id`, `uprn`, `match_score`,
+`match_type` — the IDs and the score, but **not the two address strings that were
+compared**. So a FUZZY row can't be judged from the bridge table alone; you have
+to join back to `land_registry_sales` and `epc_domestic_certificates` to see *why*
+it matched (and whether a 0.90-ish score is a real hit or a false positive).
+
+Make the matches self-explaining by carrying the address text on each row:
+
+- Add columns for the **Land Registry address** (at least the normalised
+  `addr_key` = PAON + Street, ideally raw `paon` / `street` / `postcode`) and the
+  **EPC address** (normalised `addr_key` from `address1`, ideally raw `address1` /
+  `postcode`). Populate them in `build_master_parquet` (`utils.py`) — both sides
+  are already in scope at the exact/fuzzy joins; for the coverage rows fill only
+  the side that exists (LR address on `UNMATCHED_LR`, EPC address on
+  `UNMATCHED_UPRN`). Extend `MASTER_COLUMNS` / the DDL in `schema.py` to match.
+
+Decide denormalise vs. view, because of the trade-off:
+- **Denormalised columns** (what was asked) — instant to read, but widen a 40.6M-row
+  table: ~40–60 bytes × 2 sides × 40.6M ≈ a few extra GB on top of the current
+  ~6.9 GB, and the stored text can go stale if a source address is later corrected.
+- **A read-time view** joining the bridge back to the two source tables — zero
+  storage, always fresh, but pays the join on every query (and the EPC side is
+  one-to-many: a UPRN can have several certificates with slightly different text).
+
+Recommended: a **view** (e.g. `property_uprn_mapping_audit`) for eyeballing match
+quality, and denormalised columns only if a downstream consumer needs the address
+on the bridge row itself without a join. Either way it makes the FUZZY tier
+auditable — the reason this came up.

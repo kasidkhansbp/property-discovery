@@ -20,19 +20,20 @@ from __future__ import annotations
 
 import dagster as dg
 
-from services.ingestion import epc, land_registry, reconciliation
+from services.ingestion import epc, land_registry, os_open_uprn, reconciliation
 
-_services = [land_registry.defs, epc.defs, reconciliation.defs]
+_services = [land_registry.defs, epc.defs, reconciliation.defs, os_open_uprn.defs]
 
 defs = dg.Definitions(
     assets=[a for d in _services for a in (d.assets or [])],
     jobs=[j for d in _services for j in (d.jobs or [])],
     schedules=[s for d in _services for s in (d.schedules or [])],
     # r2/postgres are identically configured across services; epc adds `epc`.
-    # reconciliation reuses the same r2/postgres and adds no new resource.
+    # reconciliation and os_open_uprn reuse the same r2/postgres and add nothing.
     resources={
         **land_registry.defs.resources,
         **epc.defs.resources,
         **reconciliation.defs.resources,
+        **os_open_uprn.defs.resources,
     },
 )
