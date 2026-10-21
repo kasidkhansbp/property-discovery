@@ -23,7 +23,12 @@ import dagster as dg
 from dagster import AssetExecutionContext
 
 from .resources import PostgresResource, R2Resource
-from .utils import build_master_parquet, load_master, normalize_sources
+from .utils import (
+    build_coverage_metrics,
+    build_master_parquet,
+    load_master,
+    normalize_sources,
+)
 
 
 def _stamp() -> str:
@@ -113,3 +118,27 @@ def _build_reconciliation_assets(
     reconciliation_incremental_master_parquet,
     reconciliation_incremental_loaded_to_postgres,
 ) = _build_reconciliation_assets("incremental", incremental=True)
+
+
+# --------------------------------------------------------------------------- #
+# Downstream mart: pre-aggregated UPRN coverage metrics.                      #
+# --------------------------------------------------------------------------- #
+# Reads the loaded property_uprn_mapping bridge and rolls it up into the small,
+# dashboard-facing mart_uprn_coverage_metrics table. It has its OWN job/schedule
+# (mart_coverage_metrics_job) rather than riding the reconciliation jobs, so the
+# rollup can be rebuilt on its own without re-reconciling. The deps on both load
+# chains are lineage only — they record that the mart is derived from either
+# bridge build; the mart always re-reads the whole current bridge when it runs.
+@dg.asset(
+    name="mart_uprn_coverage_metrics",
+    group_name="reconciliation",
+    deps=[
+        dg.AssetKey("reconciliation_full_loaded_to_postgres"),
+        dg.AssetKey("reconciliation_incremental_loaded_to_postgres"),
+    ],
+)
+def mart_uprn_coverage_metrics(
+    context: AssetExecutionContext, postgres: PostgresResource
+) -> None:
+    """Pre-aggregate coverage stats from the bridge into the serving mart."""
+    build_coverage_metrics(context, postgres)

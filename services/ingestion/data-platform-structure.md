@@ -81,3 +81,12 @@ Update Frequency: Monthly (refreshed downstream of the UPRN mapping step).
 What it stores: Pre-calculated distances and travel times from each property UPRN to the nearest train stations or city centers (e.g., 30-minute commute to London).
 
 Update Frequency: Monthly / Triggered on UPRN refresh (computed via spatial tools like DuckDB Spatial or PostGIS).
+
+# 3. The Marts (Pre-Aggregated Serving Tables)
+Small rollups built on top of the derived tables so dashboards read a tiny, already-grouped table instead of re-scanning a multi-million-row source on every request.
+
+## mart_uprn_coverage_metrics
+
+What it stores: UPRN match coverage for Land Registry sales, pre-aggregated to one row per `constituent_country` / `county` / `district` / `postcode_prefix` (the postcode outward code, e.g. `EX4`, `CF36`). Each row carries `total_land_registry_sales`, `matched_uprn_count` (sales whose joined `uprn` is non-NULL), and `coverage_percentage` (`matched / total × 100`, 2 dp). Built from `land_registry_sales` LEFT-JOINed to `property_uprn_mapping` on `transaction_id` — the grouping geography (postcode, district, county) is taken from the sale so it exists for matched *and* unmatched sales and coverage blends per area, while the bridge supplies only the matched flag. `constituent_country` is derived England/Wales from the postcode area (PPD is England & Wales only).
+
+Update Frequency: Monthly — built by its own job (`mart_coverage_metrics_job`), scheduled to run a couple of hours after the monthly reconciliation so it reads the freshly updated bridge, and re-runnable on its own without re-reconciling.

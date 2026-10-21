@@ -71,3 +71,128 @@ PG_DDL_COLS: str = (
     "    match_type          text NOT NULL,\n    "
     + ",\n    ".join(f"{name:<19} {ddl}" for name, ddl in ENRICHMENT_COLUMN_TYPES.items())
 )
+
+
+# --------------------------------------------------------------------------- #
+# Downstream mart: pre-aggregated UPRN coverage metrics.                      #
+# --------------------------------------------------------------------------- #
+# A small, dashboard-facing rollup. The bridge is ~40M rows, so a dashboard that
+# recomputes coverage on every page load would re-scan it each time; this mart
+# pre-aggregates coverage down to one row per (constituent_country, county,
+# district, postcode_prefix) so the dashboard reads a tiny, already-grouped
+# table instead.
+#
+# The geography is taken from ``land_registry_sales`` (keyed by transaction_id),
+# NOT from the bridge's enrichment columns. Those enrichment columns (postcode,
+# constituent_country) come from EPC and so only exist on *matched* rows — using
+# them would funnel every unmatched sale into a NULL bucket and make per-area
+# coverage read as a meaningless 0%/100% split. The sale's own postcode /
+# district / county exist for every transaction, matched or not, so grouping on
+# them yields true blended coverage per area. The bridge is joined on only for
+# the matched flag (``uprn IS NOT NULL``). (The reconciliation brief refers to
+# the bridge as ``fact_transaction_uprn_mapping``; here that is TARGET_TABLE,
+# ``property_uprn_mapping``.)
+MART_TABLE = "mart_uprn_coverage_metrics"
+
+# The per-sale source of the grouping geography (owned by the land_registry
+# service). Carries one row per transaction_id with postcode/district/county.
+LR_SALES_TABLE = "land_registry_sales"
+
+# Mart columns with their Postgres DDL types, in output order. ``text`` is the
+# Postgres idiom for VARCHAR (matching this table's other string columns);
+# ``numeric`` holds the 2-dp coverage percentage exactly.
+MART_COLUMN_TYPES: dict[str, str] = {
+    "constituent_country": "text",
+    "county": "text",
+    "district": "text",
+    "postcode_prefix": "text",  # outward code, e.g. 'EX4' / 'CF36'
+    "total_land_registry_sales": "bigint",  # transactions in the group
+    "matched_uprn_count": "bigint",  # of those, how many carry a UPRN
+    "coverage_percentage": "numeric",  # matched / total * 100, rounded 2 dp
+}
+MART_COLUMNS: list[str] = list(MART_COLUMN_TYPES)
+MART_GROUP_COLUMNS: list[str] = [
+    "constituent_country",
+    "county",
+    "district",
+    "postcode_prefix",
+]
+
+MART_PG_DDL_COLS: str = ",\n    ".join(
+    f"{name:<26} {ddl}" for name, ddl in MART_COLUMN_TYPES.items()
+)
+
+
+# Normalised postcode: upper-cased with all whitespace stripped ("ex4 6pr" ->
+# "EX46PR"). Both derived expressions below build on this, so a missing or
+# doubled space never changes the result. Uses only functions DuckDB and
+# Postgres share, so the mart SELECT runs unchanged in tests (DuckDB) and
+# production (Postgres).
+def _norm_postcode_sql(col: str) -> str:
+    return f"regexp_replace(upper({col}), '\\s', '', 'g')"
+
+
+def postcode_prefix_sql(col: str = "postcode") -> str:
+    """SQL expression extracting a UK postcode's outward code from ``col``.
+
+    The outward code is the postcode with its final three characters (the inward
+    code — always ``digit + 2 letters``) removed: 'EX4 6PR' -> 'EX4',
+    'CF36 1AB' -> 'CF36'. We normalise first, then take all but the last three
+    characters. Anything shorter than four characters once stripped isn't a real
+    postcode, so it yields NULL rather than a garbage prefix.
+    """
+    norm = _norm_postcode_sql(col)
+    return f"CASE WHEN length({norm}) >= 4 THEN left({norm}, length({norm}) - 3) END"
+
+
+# Land Registry PPD covers England & Wales only, so a sale's country is one of
+# those two — and it can be read from the postcode area (the leading letters of
+# the outward code). These are the postcode areas that are wholly/predominantly
+# Welsh; every other area is treated as England. Border areas (CH, SY, HR, LD's
+# edges) are approximate at this granularity — good enough for a coverage
+# dashboard, and noted so no one mistakes it for an authoritative boundary.
+WELSH_POSTCODE_AREAS: tuple[str, ...] = ("CF", "LD", "LL", "NP", "SA")
+
+
+def constituent_country_sql(col: str = "postcode") -> str:
+    """SQL expression mapping a sale's postcode to 'England' / 'Wales' / NULL.
+
+    The postcode *area* is the leading alphabetic run of the outward code, got
+    by dropping everything from the first digit onward ('CF14' -> 'CF',
+    'SW1A' -> 'SW'). It yields NULL for the same too-short/missing postcodes that
+    ``postcode_prefix_sql`` nulls out, so country and prefix stay NULL together.
+    """
+    norm = _norm_postcode_sql(col)
+    area = f"regexp_replace({norm}, '[0-9].*$', '')"
+    welsh = ", ".join(f"'{a}'" for a in WELSH_POSTCODE_AREAS)
+    return (
+        f"CASE WHEN length({norm}) < 4 THEN NULL "
+        f"WHEN {area} IN ({welsh}) THEN 'Wales' "
+        f"ELSE 'England' END"
+    )
+
+
+# The single SELECT that builds the mart. Geography comes from the sale itself
+# (land_registry_sales, one row per transaction_id), so every sale — matched or
+# not — lands in its real postcode prefix / district / county. The bridge is
+# LEFT-JOINed on transaction_id purely to read the matched UPRN: ``m.uprn`` is
+# non-NULL exactly for matched sales, NULL for UNMATCHED_LR rows and for any sale
+# the bridge hasn't covered yet, so ``count(m.uprn)`` is the matched count and
+# ``count(*)`` the total. Both transaction_id columns are unique (LR's PK, the
+# bridge's partial unique index), so the join never fans a sale out; the bridge's
+# UNMATCHED_UPRN rows (transaction_id NULL) simply never join. count(*) over a
+# group is always >= 1, so the ratio never divides by zero. GROUP BY is
+# positional (1..4) to avoid repeating the derived expressions.
+COVERAGE_METRICS_SELECT: str = f"""
+SELECT
+    {constituent_country_sql("lr.postcode")} AS constituent_country,
+    lr.county,
+    lr.district,
+    {postcode_prefix_sql("lr.postcode")} AS postcode_prefix,
+    count(*)                                   AS total_land_registry_sales,
+    count(m.uprn)                              AS matched_uprn_count,
+    round(count(m.uprn) * 100.0 / count(*), 2) AS coverage_percentage
+FROM {LR_SALES_TABLE} lr
+LEFT JOIN {TARGET_TABLE} m ON m.transaction_id = lr.transaction_id
+GROUP BY 1, 2, 3, 4
+""".strip()

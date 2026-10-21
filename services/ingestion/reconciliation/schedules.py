@@ -35,6 +35,15 @@ reconciliation_monthly_job = dg.define_asset_job(
     ),
 )
 
+# Mart refresh: rebuild mart_uprn_coverage_metrics from the current bridge. Its
+# own job (and schedule) so the coverage rollup is decoupled from the bridge
+# build — it can be re-run on its own without re-reconciling, and the bridge jobs
+# stay focused on producing property_uprn_mapping.
+mart_coverage_metrics_job = dg.define_asset_job(
+    name="mart_coverage_metrics_job",
+    selection=dg.AssetSelection.assets(assets.mart_uprn_coverage_metrics),
+)
+
 # The bridge is refreshed right after the Land Registry monthly delta (published
 # around the 20th, loaded on the 23rd). Run a day later so the new sales are in
 # place before reconciling. Adjust the cron if the upstream cadence shifts.
@@ -44,5 +53,18 @@ reconciliation_monthly_schedule = dg.ScheduleDefinition(
     name="reconciliation_monthly",
     job=reconciliation_monthly_job,
     cron_schedule="0 6 24 * *",
+    default_status=dg.DefaultScheduleStatus.STOPPED,  # flip to RUNNING when ready
+)
+
+# Refresh the coverage mart two hours after the monthly bridge job starts, by
+# which time the incremental load has committed. Kept separate (not chained off
+# the load asset) so the mart can be rebuilt independently; widen the gap if the
+# monthly reconciliation runs long.
+#   ┌ minute  ┌ hour  ┌ day-of-month  ┌ month  ┌ day-of-week
+#   0         8       24              *        *
+mart_coverage_metrics_schedule = dg.ScheduleDefinition(
+    name="mart_coverage_metrics_monthly",
+    job=mart_coverage_metrics_job,
+    cron_schedule="0 8 24 * *",
     default_status=dg.DefaultScheduleStatus.STOPPED,  # flip to RUNNING when ready
 )

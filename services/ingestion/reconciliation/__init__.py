@@ -37,9 +37,20 @@ defs = dg.Definitions(
         assets.reconciliation_incremental_normalized,
         assets.reconciliation_incremental_master_parquet,
         assets.reconciliation_incremental_loaded_to_postgres,
+        # downstream mart — pre-aggregated coverage metrics, rebuilt after
+        # either load chain
+        assets.mart_uprn_coverage_metrics,
     ],
-    jobs=[schedules.reconciliation_full_job, schedules.reconciliation_monthly_job],
-    schedules=[schedules.reconciliation_monthly_schedule],
+    jobs=[
+        schedules.reconciliation_full_job,
+        schedules.reconciliation_monthly_job,
+        # standalone mart build — rebuilds mart_uprn_coverage_metrics on its own
+        schedules.mart_coverage_metrics_job,
+    ],
+    schedules=[
+        schedules.reconciliation_monthly_schedule,
+        schedules.mart_coverage_metrics_schedule,
+    ],
     resources={
         "r2": R2Resource(
             bucket=dg.EnvVar("R2_BUCKET"),

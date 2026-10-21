@@ -42,7 +42,12 @@ from dagster import AssetExecutionContext
 
 from .resources import PostgresResource, R2Resource
 from .schema import (
+    COVERAGE_METRICS_SELECT,
     ENRICHMENT_COLUMN_TYPES,
+    LR_SALES_TABLE,
+    MART_COLUMNS,
+    MART_PG_DDL_COLS,
+    MART_TABLE,
     MASTER_COLUMNS,
     MATCH_COLUMNS,
     MATCH_EXACT,
@@ -556,5 +561,79 @@ def load_master(
             "transaction_rows_inserted": inserted,
             "unmatched_uprn_rows": refreshed_uprn,
             "table_rows_total": total_rows,
+        }
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Mart: pre-aggregated UPRN coverage metrics (mart_uprn_coverage_metrics).     #
+# --------------------------------------------------------------------------- #
+def build_coverage_metrics(
+    context: AssetExecutionContext, postgres: PostgresResource
+) -> None:
+    """Rebuild ``mart_uprn_coverage_metrics`` from the sales + the bridge.
+
+    One GROUP BY over ``land_registry_sales`` LEFT-JOINed to the bridge collapses
+    every sale into one row per (constituent_country, county, district,
+    postcode_prefix), carrying the total Land Registry sales, the matched-UPRN
+    count, and the rounded coverage percentage. The grouping geography is taken
+    from the sale itself (so unmatched sales keep their real postcode/area and
+    coverage blends per area); the bridge supplies only the matched flag. The
+    aggregation runs entirely in Postgres — both tables are there, the result is
+    tiny, and a single grouped join is far cheaper than the DuckDB + R2 round-trip
+    the match steps need — so a dashboard can read the mart directly instead of
+    re-scanning ~40M rows on every request.
+
+    The build is load-and-swap: fill a fresh ``*_new`` table, then drop-and-rename
+    it into place inside one short transaction. The live mart keeps serving the
+    previous snapshot until the rename commits, so a refresh never exposes a
+    half-built or empty table.
+    """
+    new_table = f"{MART_TABLE}_new"
+    cols = ", ".join(MART_COLUMNS)
+
+    with postgres.connect() as conn, conn.cursor() as cur:
+        context.log.info(
+            "Building %s from %s joined to %s", MART_TABLE, LR_SALES_TABLE, TARGET_TABLE
+        )
+        # Build the next snapshot off to the side with the exact DDL types.
+        cur.execute(f"DROP TABLE IF EXISTS {new_table};")
+        cur.execute(f"CREATE TABLE {new_table} (\n    {MART_PG_DDL_COLS}\n);")
+        cur.execute(f"INSERT INTO {new_table} ({cols})\n{COVERAGE_METRICS_SELECT};")
+        group_rows = cur.rowcount
+
+        # Atomic swap: readers see the old mart until this transaction commits.
+        cur.execute(f"DROP TABLE IF EXISTS {MART_TABLE};")
+        cur.execute(f"ALTER TABLE {new_table} RENAME TO {MART_TABLE};")
+
+        # Headline totals for the run's metadata (and a quick sanity check).
+        cur.execute(
+            f"SELECT coalesce(sum(total_land_registry_sales), 0),"
+            f"       coalesce(sum(matched_uprn_count), 0) FROM {MART_TABLE};"
+        )
+        # Postgres SUM() over bigints comes back as decimal.Decimal; coerce to
+        # plain ints so the metadata values are JSON-friendly and the overall
+        # coverage can be computed in float without a Decimal/float type clash.
+        total_sales, total_matched = cur.fetchone()
+        total_sales = int(total_sales)
+        total_matched = int(total_matched)
+        conn.commit()
+
+    overall = round(total_matched * 100.0 / total_sales, 2) if total_sales else 0.0
+    context.log.info(
+        "Built %s: %s group(s), %s sale(s), %s matched (%.2f%% overall coverage)",
+        MART_TABLE,
+        group_rows,
+        total_sales,
+        total_matched,
+        overall,
+    )
+    context.add_output_metadata(
+        {
+            "mart_table": MART_TABLE,
+            "coverage_groups": group_rows,
+            "total_land_registry_sales": total_sales,
+            "matched_uprn_count": total_matched,
+            "overall_coverage_percentage": overall,
         }
     )

@@ -21,6 +21,30 @@ threshold. Then full coverage: every transaction and every UPRN appears, with
 `UNMATCHED_LR` / `UNMATCHED_UPRN` rows for the leftovers. One best UPRN per
 `transaction_id` (1:1); a UPRN may recur across many transactions (1:many).
 
+## Downstream mart: `mart_uprn_coverage_metrics`
+
+A dashboard-facing coverage rollup, built by its **own** job
+(`mart_coverage_metrics_job`, scheduled monthly a couple of hours after the
+incremental reconciliation) so it can be refreshed independently of the bridge
+build. One `GROUP BY` over `land_registry_sales` LEFT-JOINed to
+`property_uprn_mapping` on `transaction_id` collapses every sale into one row per
+`constituent_country` / `county` / `district` / `postcode_prefix` (the postcode
+outward code, e.g. `EX4`, `CF36`), each carrying `total_land_registry_sales`,
+`matched_uprn_count` (sales whose joined `uprn` is non-NULL), and
+`coverage_percentage` (2 dp).
+
+**The grouping geography comes from the sale, not the bridge.** The bridge's
+`postcode` / `constituent_country` are EPC enrichment that only exists on
+*matched* rows, so grouping on them would funnel every unmatched sale into a NULL
+bucket and make coverage read as a meaningless 0%/100% split. The sale's own
+`postcode` / `district` / `county` exist for every transaction, so grouping on
+them gives true blended coverage per area; the bridge is joined on only for the
+matched flag. `constituent_country` is derived England/Wales from the postcode
+area (PPD is England & Wales only) — approximate at the border, fine for a
+coverage view. The aggregation runs in Postgres (both sources are there and the
+result is tiny) and swaps the new snapshot in atomically, so the dashboard never
+re-scans the ~40M-row bridge and never sees a half-built table.
+
 ## Files
 | File | Role |
 |------|------|
@@ -113,3 +137,29 @@ Recommended: a **view** (e.g. `property_uprn_mapping_audit`) for eyeballing matc
 quality, and denormalised columns only if a downstream consumer needs the address
 on the bridge row itself without a join. Either way it makes the FUZZY tier
 auditable — the reason this came up.
+
+## TODO: distribution of how many times a property is sold
+
+We know per-area match coverage, but not how often individual properties change
+hands. Build the **resale-frequency distribution**: group sales by property, count
+the transactions per property, then roll those counts up into a histogram (how many
+properties sold once, twice, three times, …). This is the input to churn / turnover
+analytics (which areas and property types resell most).
+
+- **Key the grouping on `uprn`, not address.** `property_uprn_mapping` already maps
+  each `transaction_id` to a `uprn`, so join `land_registry_sales` to the bridge and
+  `GROUP BY uprn` to get `sales_per_property = count(transaction_id)`. Grouping on the
+  raw address strings instead would split the same property across spelling variants
+  and inflate the "sold once" bucket.
+- **Only matched sales can be counted per property.** `UNMATCHED_LR` sales have no
+  `uprn`, so they can't be attributed to a property — report them as a separate
+  "unattributable" figure rather than folding them into the "sold once" bucket, or
+  the distribution reads low. (This is also why improving match coverage feeds
+  directly into the accuracy of this metric.)
+- **Mind the PPD scope** — Price Paid Data starts in 1995 and excludes some
+  transfer types (e.g. many non-market / non-notified transfers), so a count is
+  "sales since 1995 that PPD records," not a property's full history. Note that on
+  the output so no one reads a `1` as "never resold."
+- Natural home is a small mart (same pattern as `mart_uprn_coverage_metrics`): one
+  row per `sales_count` bucket with `property_count`, optionally also keyed by
+  geography (`constituent_country` / `county` / `district`) for per-area turnover.
