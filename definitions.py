@@ -20,9 +20,21 @@ from __future__ import annotations
 
 import dagster as dg
 
-from services.ingestion import epc, land_registry, os_open_uprn, reconciliation
+from services.ingestion import (
+    data_quality,
+    epc,
+    land_registry,
+    os_open_uprn,
+    reconciliation,
+)
 
-_services = [land_registry.defs, epc.defs, reconciliation.defs, os_open_uprn.defs]
+_services = [
+    land_registry.defs,
+    epc.defs,
+    reconciliation.defs,
+    os_open_uprn.defs,
+    data_quality.defs,
+]
 
 defs = dg.Definitions(
     assets=[a for d in _services for a in (d.assets or [])],
@@ -35,5 +47,6 @@ defs = dg.Definitions(
         **epc.defs.resources,
         **reconciliation.defs.resources,
         **os_open_uprn.defs.resources,
+        **data_quality.defs.resources,
     },
 )

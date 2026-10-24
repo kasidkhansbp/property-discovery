@@ -5,3 +5,9 @@ duckdb                 # CSV -> clean Parquet
 boto3                  # Cloudflare R2 (S3-compatible) client
 psycopg[binary]        # Postgres loading
 requests               # downloading source files
+
+# ---- Gateway (read API over the serving DB; see gateway/) ----
+fastapi                # HTTP API framework for gateway/app
+uvicorn[standard]      # ASGI server to run the gateway
+psycopg_pool           # connection pool the gateway holds across requests
+python-dotenv          # load repo .env in local dev (optional at runtime)
