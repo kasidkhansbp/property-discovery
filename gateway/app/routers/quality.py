@@ -1,15 +1,21 @@
-"""HTTP routes over the per-table ``<table>_quality`` companions.
+"""HTTP routes over the data-quality companions.
 
-Three read-only endpoints:
+Read-only endpoints:
 
   * ``GET /quality`` — a one-row-per-table summary (source row count, columns
     profiled, average and worst coverage, snapshot time) across every profiled
     table: the dashboard landing.
   * ``GET /quality/tables`` — the profiled table names and their companion
     table names; static, no database needed.
+  * ``GET /quality/duplication`` — key-duplication / fan-out across tables
+    (one row per check: transaction_ids per uprn in property_uprn_mapping,
+    repeated transaction_ids in land_registry_sales, repeated uprns in EPC).
   * ``GET /quality/{source_table}`` — every profiled column of one table, with
     its populated / NULL / blank counts and coverage, optionally narrowed to a
     coverage range and sorted.
+
+Note the static ``/duplication`` route is declared before the dynamic
+``/{source_table}`` route so it is not captured as a table name.
 
 As with the coverage router, the route functions stay thin: validate/translate
 the request, hand off to the pure builders in ``quality_query.py``, run the
@@ -28,14 +34,20 @@ from psycopg_pool import ConnectionPool
 
 from ..db import get_pool, run_query
 from ..quality_query import (
+    DEFAULT_DUP_SORT_BY,
+    DEFAULT_DUP_SORT_DIR,
     DEFAULT_SORT_BY,
     DEFAULT_SORT_DIR,
+    DUPLICATION_SORTABLE_COLUMNS,
     SORTABLE_COLUMNS,
     SOURCE_TABLES,
+    build_duplication_query,
     build_quality_query,
     build_quality_summary_query,
 )
 from ..schemas import (
+    DuplicationRow,
+    DuplicationSummary,
     QualityColumnRow,
     QualitySummary,
     QualitySummaryRow,
@@ -48,6 +60,10 @@ router = APIRouter(prefix="/quality", tags=["quality"])
 _NOT_BUILT = (
     "quality table not built yet — run the matching *_quality job "
     "(see services/ingestion/data_quality)"
+)
+_DUP_NOT_BUILT = (
+    "key_duplication_quality not built yet — run the "
+    "key_duplication_quality job (see services/ingestion/data_quality)"
 )
 
 
@@ -75,6 +91,47 @@ def quality_tables() -> list[dict]:
         {"source_table": name, "quality_table": source.quality_table}
         for name, source in QUALITY_SOURCES.items()
     ]
+
+
+@router.get(
+    "/duplication",
+    response_model=DuplicationSummary,
+    summary="Key duplication / fan-out across tables",
+)
+def quality_duplication(
+    pool: Annotated[ConnectionPool, Depends(get_pool)],
+    min_duplicate_keys: Annotated[
+        int | None,
+        Query(ge=0, description="Only checks with keys_with_duplicates >= this"),
+    ] = None,
+    sort_by: Annotated[
+        str,
+        Query(description=f"One of: {', '.join(sorted(DUPLICATION_SORTABLE_COLUMNS))}"),
+    ] = DEFAULT_DUP_SORT_BY,
+    sort_dir: Annotated[str, Query(pattern="^(?i)(asc|desc)$")] = DEFAULT_DUP_SORT_DIR,
+) -> DuplicationSummary:
+    """Key-duplication / fan-out metrics, one row per check.
+
+    How many transaction_ids map to a uprn in ``property_uprn_mapping``, how many
+    ``transaction_id`` values repeat in ``land_registry_sales``, and how many
+    ``uprn`` values repeat in ``epc_domestic_certificates``. Defaults to the most
+    duplicated keys first; the table hasn't-been-built case returns 404.
+    """
+    try:
+        sql, params = build_duplication_query(
+            min_duplicate_keys=min_duplicate_keys,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        rows = run_query(pool, sql, params)
+    except pg_errors.UndefinedTable as exc:
+        raise HTTPException(status_code=404, detail=_DUP_NOT_BUILT) from exc
+
+    return DuplicationSummary(items=[DuplicationRow(**row) for row in rows])
 
 
 @router.get(

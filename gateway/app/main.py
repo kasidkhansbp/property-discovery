@@ -39,7 +39,8 @@ app = FastAPI(
         "address component). `/quality` exposes the per-table data-quality "
         "companions: per-column coverage (how populated each column is) for "
         "land_registry_sales, epc_domestic_certificates, os_open_uprn and "
-        "property_uprn_mapping."
+        "property_uprn_mapping, plus `/quality/duplication` for key-duplication "
+        "/ fan-out across those tables."
     ),
     version="0.2.0",
     lifespan=lifespan,

@@ -25,6 +25,8 @@ from __future__ import annotations
 from typing import Any
 
 from services.ingestion.data_quality.schema import (
+    DUPLICATION_COLUMNS,
+    DUPLICATION_TABLE,
     QUALITY_COLUMNS,
     QUALITY_SOURCES,
 )
@@ -121,3 +123,62 @@ def build_quality_summary_query() -> tuple[str, list[Any]]:
         )
     sql = "\nUNION ALL\n".join(branches) + "\nORDER BY source_table"
     return sql, []
+
+
+# --------------------------------------------------------------------------- #
+# Key-duplication / fan-out table (``key_duplication_quality``).              #
+#                                                                             #
+# One flat table, one row per check — already a summary — so there is a single #
+# builder returning every row, optionally narrowed to checks with at least N  #
+# duplicated keys and sorted. Same two safety rules as above: the table name   #
+# is the service's own constant (never request input) and the only sortable    #
+# identifiers are its own ``DUPLICATION_COLUMNS``; the filter value is bound.   #
+# --------------------------------------------------------------------------- #
+DUPLICATION_SORTABLE_COLUMNS: frozenset[str] = frozenset(DUPLICATION_COLUMNS)
+# Default ordering — the most duplicated keys first (problems first), matching
+# the coverage API's convention, with the source table as a stable tiebreak.
+DEFAULT_DUP_SORT_BY: str = "keys_with_duplicates"
+DEFAULT_DUP_SORT_DIR: str = "desc"
+_DUP_TIEBREAK: str = "source_table"
+
+
+def build_duplication_query(
+    *,
+    min_duplicate_keys: int | None = None,
+    sort_by: str = DEFAULT_DUP_SORT_BY,
+    sort_dir: str = DEFAULT_DUP_SORT_DIR,
+) -> tuple[str, list[Any]]:
+    """SQL + params for the key-duplication checks (one row per check).
+
+    Returns every check row, optionally restricted to those with at least
+    ``min_duplicate_keys`` duplicated key values, ordered by ``sort_by`` /
+    ``sort_dir`` with a stable source-table tiebreak. Raises ``ValueError`` on an
+    unsortable column, a bad direction, or a negative ``min_duplicate_keys``.
+    """
+    if sort_by not in DUPLICATION_SORTABLE_COLUMNS:
+        raise ValueError(f"not a sortable column: {sort_by!r}")
+    direction = sort_dir.lower()
+    if direction not in ("asc", "desc"):
+        raise ValueError(f"sort_dir must be 'asc' or 'desc', got {sort_dir!r}")
+
+    params: list[Any] = []
+    where = ""
+    if min_duplicate_keys is not None:
+        if min_duplicate_keys < 0:
+            raise ValueError(
+                f"min_duplicate_keys must be >= 0, got {min_duplicate_keys}"
+            )
+        where = "WHERE keys_with_duplicates >= %s\n"
+        params.append(min_duplicate_keys)
+
+    order_by = f"{sort_by} {direction}"
+    if sort_by != _DUP_TIEBREAK:
+        order_by += f", {_DUP_TIEBREAK}"
+
+    sql = (
+        f"SELECT {', '.join(DUPLICATION_COLUMNS)}\n"
+        f"FROM {DUPLICATION_TABLE}\n"
+        f"{where}"
+        f"ORDER BY {order_by}"
+    )
+    return sql, params

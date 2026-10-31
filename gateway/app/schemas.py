@@ -95,3 +95,43 @@ class QualitySummary(BaseModel):
     """Headline coverage for every profiled table."""
 
     items: list[QualitySummaryRow]
+
+
+# --------------------------------------------------------------------------- #
+# Key-duplication / fan-out API (the key_duplication_quality table).          #
+# --------------------------------------------------------------------------- #
+class DuplicationRow(BaseModel):
+    """One key-duplication check: how multiply-mapped a table's key column is."""
+
+    source_table: str = Field(examples=["property_uprn_mapping"])
+    key_column: str = Field(examples=["uprn"])
+    total_rows: int = Field(
+        description="Rows in the source table (NULL keys included)", examples=[4200110]
+    )
+    non_null_keys: int = Field(
+        description="Rows carrying a non-NULL key", examples=[4100000]
+    )
+    distinct_keys: int = Field(
+        description="Distinct non-NULL key values", examples=[3980002]
+    )
+    keys_with_duplicates: int = Field(
+        description="Distinct keys appearing more than once", examples=[180004]
+    )
+    duplicate_rows: int = Field(
+        description="Rows sharing a key with >=1 other row", examples=[400112]
+    )
+    max_rows_per_key: int = Field(
+        description="Largest group size for any one key", examples=[14]
+    )
+    avg_rows_per_key: float | None = Field(
+        None,
+        description="non_null_keys / distinct_keys (NULL if there are no keys)",
+        examples=[1.03],
+    )
+    checked_at: datetime
+
+
+class DuplicationSummary(BaseModel):
+    """Every key-duplication check, one row each."""
+
+    items: list[DuplicationRow]
