@@ -5,6 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  fetchDuplication,
   fetchQualitySummary,
   fetchQualityTable,
   type QualityTableName,
@@ -28,6 +29,15 @@ export function useQualityTable(sourceTable: QualityTableName) {
   return useQuery({
     queryKey: ["quality-table", sourceTable],
     queryFn: ({ signal }) => fetchQualityTable(sourceTable, signal),
+    staleTime: STALE_TIME_MS,
+  });
+}
+
+/** Key-duplication / fan-out across tables (GET /quality/duplication). */
+export function useDuplication() {
+  return useQuery({
+    queryKey: ["quality-duplication"],
+    queryFn: ({ signal }) => fetchDuplication(signal),
     staleTime: STALE_TIME_MS,
   });
 }

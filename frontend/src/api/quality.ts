@@ -62,6 +62,25 @@ export interface QualitySummary {
   items: QualitySummaryRow[];
 }
 
+// One key-duplication / fan-out check: how multiply-mapped a table's key is.
+// Mirrors gateway DuplicationRow (gateway/app/schemas.py).
+export interface DuplicationRow {
+  source_table: string;
+  key_column: string;
+  total_rows: number;
+  non_null_keys: number;
+  distinct_keys: number;
+  keys_with_duplicates: number;
+  duplicate_rows: number;
+  max_rows_per_key: number;
+  avg_rows_per_key: number | null;
+  checked_at: string;
+}
+
+export interface DuplicationSummary {
+  items: DuplicationRow[];
+}
+
 /** Headline coverage for every profiled table (GET /quality). */
 export function fetchQualitySummary(signal?: AbortSignal): Promise<QualitySummary> {
   return apiGet<QualitySummary>("/quality", undefined, signal);
@@ -73,4 +92,9 @@ export function fetchQualityTable(
   signal?: AbortSignal,
 ): Promise<QualityTable> {
   return apiGet<QualityTable>(`/quality/${sourceTable}`, undefined, signal);
+}
+
+/** Key-duplication / fan-out across tables (GET /quality/duplication). */
+export function fetchDuplication(signal?: AbortSignal): Promise<DuplicationSummary> {
+  return apiGet<DuplicationSummary>("/quality/duplication", undefined, signal);
 }

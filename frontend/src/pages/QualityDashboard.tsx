@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { ApiError } from "../api/client";
 import { QUALITY_TABLES, TABLE_LABELS, type QualitySummaryRow } from "../api/quality";
+import { DuplicationSection } from "../components/DuplicationSection";
 import { QualityTableSection } from "../components/QualityTableSection";
 import { useQualitySummary } from "../hooks/useQuality";
 
@@ -23,7 +24,7 @@ export function QualityDashboard() {
           <h1>Data Quality</h1>
           <p className="dashboard__subtitle">
             Per-column coverage for every served table — how much of each column
-            is actually populated
+            is actually populated — plus cross-table key duplication &amp; fan-out
           </p>
         </div>
         <label className="toggle">
@@ -49,6 +50,8 @@ export function QualityDashboard() {
       )}
 
       {summary.data && <SummaryStrip rows={summary.data.items} />}
+
+      <DuplicationSection />
 
       {QUALITY_TABLES.map((table) => (
         <QualityTableSection key={table} sourceTable={table} onlyProblems={onlyProblems} />
