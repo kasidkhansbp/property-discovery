@@ -204,3 +204,121 @@ def quality_metrics_select(
         f"{body}\n"
         f"ORDER BY column_position"
     )
+
+
+# =========================================================================== #
+# Cross-table key-duplication checks.                                         #
+#                                                                             #
+# A second, single companion table — ``key_duplication_quality`` — answers a  #
+# different question from the per-column coverage tables above: for a chosen  #
+# *key column*, how many rows share a key value (how duplicated, or how       #
+# multiply-mapped, that key is). Unlike the coverage tables (one per source), #
+# this is ONE table with one row per check, so the three headline duplication #
+# figures sit side by side:                                                   #
+#                                                                             #
+#   * property_uprn_mapping / uprn — how many transaction_ids map to a uprn   #
+#     (a property's sales fan-out: avg and max transactions per property);    #
+#   * land_registry_sales / transaction_id — repeated transaction_ids (the PK #
+#     is unique, so keys_with_duplicates is ideally 0);                       #
+#   * epc_domestic_certificates / uprn — repeated uprns (a property carrying  #
+#     more than one EPC certificate).                                         #
+#                                                                             #
+# ``duplication_metrics_select`` groups the source by its key once and        #
+# aggregates the group sizes, using only functions Postgres and DuckDB share, #
+# so it runs unchanged in tests (DuckDB) and production (Postgres).           #
+# =========================================================================== #
+DUPLICATION_TABLE = "key_duplication_quality"
+
+# One row per check. NULL keys are excluded from the grouping (they have no key
+# to be "duplicated") but still counted in ``total_rows`` — e.g. an UNMATCHED_LR
+# row in property_uprn_mapping has a NULL uprn.
+DUPLICATION_COLUMN_TYPES: dict[str, str] = {
+    "source_table": "text",  # the table this check profiles
+    "key_column": "text",  # the column whose values are counted per group
+    "total_rows": "bigint",  # rows in the source table (NULL keys included)
+    "non_null_keys": "bigint",  # rows carrying a non-NULL key
+    "distinct_keys": "bigint",  # distinct non-NULL key values
+    "keys_with_duplicates": "bigint",  # distinct keys appearing more than once
+    "duplicate_rows": "bigint",  # rows sharing a key with >=1 other row
+    "max_rows_per_key": "bigint",  # largest group size for any one key
+    "avg_rows_per_key": "numeric",  # non_null_keys / distinct_keys, 2 dp
+    "checked_at": "timestamptz",  # when this snapshot was taken
+}
+DUPLICATION_COLUMNS: list[str] = list(DUPLICATION_COLUMN_TYPES)
+
+# (source_table, key_column) is the natural PK — one row per check.
+DUPLICATION_PG_DDL_COLS: str = (
+    ",\n    ".join(
+        f"{name:<20} {ddl}" for name, ddl in DUPLICATION_COLUMN_TYPES.items()
+    )
+    + ",\n    PRIMARY KEY (source_table, key_column)"
+)
+
+
+@dataclass(frozen=True)
+class DuplicationCheck:
+    """One (table, key column) pair to profile for key duplication / fan-out."""
+
+    source_table: str
+    key_column: str
+
+    @property
+    def load_asset_keys(self) -> tuple[str, ...]:
+        """Reuse the source's load lineage already declared in QUALITY_SOURCES."""
+        return QUALITY_SOURCES[self.source_table].load_asset_keys
+
+
+# The three checks the one table carries, in display order.
+DUPLICATION_CHECKS: tuple[DuplicationCheck, ...] = (
+    DuplicationCheck(PUM_TABLE, "uprn"),  # transaction_ids per property
+    DuplicationCheck(LR_TABLE, "transaction_id"),  # repeated LR transaction ids
+    DuplicationCheck(EPC_TABLE, "uprn"),  # repeated EPC uprns
+)
+
+
+def duplication_metrics_select(check: DuplicationCheck) -> str:
+    """The SELECT that profiles one key column into a single duplication row.
+
+    The source is grouped by its key once (NULL keys excluded from the group,
+    but still counted in ``total_rows``); the group sizes are then aggregated
+    into the headline figures. ``agg`` and ``tot`` are each a single-row
+    aggregate, so their CROSS JOIN yields exactly one output row even when the
+    table is empty or every key is NULL (the counts fall back to 0 via
+    ``coalesce``; ``avg_rows_per_key`` is NULL when there are no keys to average).
+    Column order matches ``DUPLICATION_COLUMNS`` for a direct INSERT.
+    """
+    table = check.source_table
+    key = check.key_column
+    return (
+        f"WITH key_counts AS (\n"
+        f"    SELECT {key} AS key_value, count(*) AS n\n"
+        f"    FROM {table}\n"
+        f"    WHERE {key} IS NOT NULL\n"
+        f"    GROUP BY {key}\n"
+        f"),\n"
+        f"agg AS (\n"
+        f"    SELECT\n"
+        f"        coalesce(sum(n), 0) AS non_null_keys,\n"
+        f"        count(*) AS distinct_keys,\n"
+        f"        count(*) FILTER (WHERE n > 1) AS keys_with_duplicates,\n"
+        f"        coalesce(sum(n) FILTER (WHERE n > 1), 0) AS duplicate_rows,\n"
+        f"        coalesce(max(n), 0) AS max_rows_per_key,\n"
+        f"        round(sum(n) * 1.0 / nullif(count(*), 0), 2) AS avg_rows_per_key\n"
+        f"    FROM key_counts\n"
+        f"),\n"
+        f"tot AS (\n"
+        f"    SELECT count(*) AS total_rows FROM {table}\n"
+        f")\n"
+        f"SELECT\n"
+        f"    '{table}' AS source_table,\n"
+        f"    '{key}' AS key_column,\n"
+        f"    tot.total_rows,\n"
+        f"    agg.non_null_keys,\n"
+        f"    agg.distinct_keys,\n"
+        f"    agg.keys_with_duplicates,\n"
+        f"    agg.duplicate_rows,\n"
+        f"    agg.max_rows_per_key,\n"
+        f"    agg.avg_rows_per_key,\n"
+        f"    now() AS checked_at\n"
+        f"FROM agg CROSS JOIN tot"
+    )

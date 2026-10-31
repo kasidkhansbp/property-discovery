@@ -9,13 +9,19 @@ asset is a one-line wrapper.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 from dagster import AssetExecutionContext
 
 from .resources import PostgresResource
 from .schema import (
+    DUPLICATION_COLUMNS,
+    DUPLICATION_PG_DDL_COLS,
     QUALITY_COLUMNS,
     QUALITY_PG_DDL_COLS,
+    DuplicationCheck,
     QualitySource,
+    duplication_metrics_select,
     quality_metrics_select,
 )
 
@@ -88,5 +94,58 @@ def build_quality_metrics(
             "total_rows": total_rows,
             "average_coverage_pct": avg_coverage,
             "worst_column_coverage_pct": min_coverage,
+        }
+    )
+
+
+def build_duplication_metrics(
+    context: AssetExecutionContext,
+    postgres: PostgresResource,
+    table: str,
+    checks: Sequence[DuplicationCheck],
+) -> None:
+    """Rebuild ``key_duplication_quality`` with one row per key-duplication check.
+
+    Same load-and-swap as the coverage tables: fill a fresh ``*_new`` table with
+    one INSERT per check (each a single grouped scan of its source), then
+    drop-and-rename it into place in one transaction, so readers keep seeing the
+    previous snapshot until the rename commits. The result is tiny (one row per
+    check), so the aggregation runs entirely in Postgres with no DuckDB or
+    object-storage round-trip.
+    """
+    new_table = f"{table}_new"
+    cols = ", ".join(DUPLICATION_COLUMNS)
+
+    with postgres.connect() as conn, conn.cursor() as cur:
+        context.log.info("Building %s from %d check(s)", table, len(checks))
+        cur.execute(f"DROP TABLE IF EXISTS {new_table};")
+        cur.execute(f"CREATE TABLE {new_table} (\n    {DUPLICATION_PG_DDL_COLS}\n);")
+        for check in checks:
+            cur.execute(
+                f"INSERT INTO {new_table} ({cols})\n"
+                f"{duplication_metrics_select(check)};"
+            )
+
+        # Atomic swap: readers see the old table until this commits.
+        cur.execute(f"DROP TABLE IF EXISTS {table};")
+        cur.execute(f"ALTER TABLE {new_table} RENAME TO {table};")
+
+        # Headline figures per check for the run's metadata.
+        cur.execute(
+            f"SELECT source_table, key_column, keys_with_duplicates, max_rows_per_key "
+            f"FROM {table} ORDER BY source_table, key_column;"
+        )
+        rows = cur.fetchall()
+        conn.commit()
+
+    context.log.info("Built %s: %d check(s)", table, len(rows))
+    context.add_output_metadata(
+        {
+            "quality_table": table,
+            "checks": len(rows),
+            **{
+                f"{src}.{col}": f"{int(dupes)} dup key(s), max {int(mx)}/key"
+                for src, col, dupes, mx in rows
+            },
         }
     )

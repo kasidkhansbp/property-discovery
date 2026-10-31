@@ -12,18 +12,24 @@ from dagster import AssetExecutionContext
 
 from .resources import PostgresResource
 from .schema import (
+    DUPLICATION_CHECKS,
+    DUPLICATION_TABLE,
     EPC_TABLE,
     LR_TABLE,
     OS_OPEN_UPRN_TABLE,
     PUM_TABLE,
     QUALITY_SOURCES,
 )
-from .utils import build_quality_metrics
+from .utils import build_duplication_metrics, build_quality_metrics
 
 _LR = QUALITY_SOURCES[LR_TABLE]
 _EPC = QUALITY_SOURCES[EPC_TABLE]
 _OS = QUALITY_SOURCES[OS_OPEN_UPRN_TABLE]
 _PUM = QUALITY_SOURCES[PUM_TABLE]
+
+# The duplication table is derived from every source its checks touch, so it
+# sits downstream of all of their loads (deduped union of the sources' lineage).
+_DUP_DEPS = sorted({k for c in DUPLICATION_CHECKS for k in c.load_asset_keys})
 
 
 @dg.asset(
@@ -72,3 +78,21 @@ def property_uprn_mapping_quality(
 ) -> None:
     """Per-column coverage of ``property_uprn_mapping``."""
     build_quality_metrics(context, postgres, _PUM)
+
+
+@dg.asset(
+    name=DUPLICATION_TABLE,
+    group_name="data_quality",
+    deps=[dg.AssetKey(k) for k in _DUP_DEPS],
+)
+def key_duplication_quality(
+    context: AssetExecutionContext, postgres: PostgresResource
+) -> None:
+    """Cross-table key-duplication / fan-out metrics, one row per check.
+
+    One small table answering: how many transaction_ids map to a uprn in
+    ``property_uprn_mapping``, how many ``transaction_id`` values repeat in
+    ``land_registry_sales``, and how many ``uprn`` values repeat in
+    ``epc_domestic_certificates``.
+    """
+    build_duplication_metrics(context, postgres, DUPLICATION_TABLE, DUPLICATION_CHECKS)

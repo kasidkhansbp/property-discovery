@@ -35,6 +35,10 @@ property_uprn_mapping_quality_job = dg.define_asset_job(
     name="property_uprn_mapping_quality_job",
     selection=dg.AssetSelection.assets(assets.property_uprn_mapping_quality),
 )
+key_duplication_quality_job = dg.define_asset_job(
+    name="key_duplication_quality_job",
+    selection=dg.AssetSelection.assets(assets.key_duplication_quality),
+)
 
 # Monthly refresh for each, on the 24th at 09:00 (after the loads + the mart).
 #   ┌ minute  ┌ hour  ┌ day-of-month  ┌ month  ┌ day-of-week
@@ -62,6 +66,12 @@ os_open_uprn_quality_schedule = dg.ScheduleDefinition(
 property_uprn_mapping_quality_schedule = dg.ScheduleDefinition(
     name="property_uprn_mapping_quality_monthly",
     job=property_uprn_mapping_quality_job,
+    cron_schedule=_MONTHLY_CRON,
+    default_status=dg.DefaultScheduleStatus.STOPPED,
+)
+key_duplication_quality_schedule = dg.ScheduleDefinition(
+    name="key_duplication_quality_monthly",
+    job=key_duplication_quality_job,
     cron_schedule=_MONTHLY_CRON,
     default_status=dg.DefaultScheduleStatus.STOPPED,
 )
