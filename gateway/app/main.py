@@ -1,6 +1,6 @@
 """FastAPI application for the property-discovery gateway.
 
-Run it from the repo root (so ``services.ingestion.*`` imports resolve, same as
+Run it from the repo root (so ``services.jobs.ingestion.*`` imports resolve, same as
 Dagster) with the serving DB's ``POSTGRES_DSN`` in the environment or repo
 ``.env``::
 

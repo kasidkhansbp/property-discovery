@@ -6,7 +6,7 @@ and of any live database handle: every function takes plain Python and returns
 
 The quality tables are the ``<table>_quality`` companions built by the
 ``data_quality`` service — one row per source column, carrying how populated
-that column is (see services/ingestion/data_quality/schema.py). They are tiny
+that column is (see services/jobs/ingestion/data_quality/schema.py). They are tiny
 (at most a few dozen rows each), so there is no paging here; a caller gets every
 column row for a table, optionally narrowed to a coverage range and sorted.
 
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.ingestion.data_quality.schema import (
+from shared.db.schema import (
     DUPLICATION_COLUMNS,
     DUPLICATION_TABLE,
     QUALITY_COLUMNS,

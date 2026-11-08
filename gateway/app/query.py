@@ -28,11 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.ingestion.reconciliation.schema import (
-    MART_COLUMNS,
-    MART_GROUP_COLUMNS,
-    MART_TABLE,
-)
+from shared.db.schema import MART_COLUMNS, MART_GROUP_COLUMNS, MART_TABLE
 
 # The dimensions a caller may filter on — exactly the mart's grouping columns
 # (the address components), which are the only non-metric columns. Re-exported

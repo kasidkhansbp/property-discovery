@@ -3,14 +3,14 @@
 A thin, read-only HTTP layer over the serving database. It owns no business
 logic and no copy of the schema: the columns it filters, sorts, and returns are
 imported from the owning service
-(`services/ingestion/reconciliation/schema.py`), so they can't drift.
+(`services/jobs/ingestion/reconciliation/schema.py`), so they can't drift.
 
 The first resource it exposes is **`mart_uprn_coverage_metrics`** — UPRN match
 coverage pre-aggregated to one row per area.
 
 ## Run it
 
-From the repo root (so `services.ingestion.*` imports resolve, as with Dagster),
+From the repo root (so `services.jobs.ingestion.*` imports resolve, as with Dagster),
 with the serving DB's `POSTGRES_DSN` set in the environment or repo `.env`:
 
 ```bash

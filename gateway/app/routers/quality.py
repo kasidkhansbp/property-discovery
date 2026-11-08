@@ -53,17 +53,17 @@ from ..schemas import (
     QualitySummaryRow,
     QualityTable,
 )
-from services.ingestion.data_quality.schema import QUALITY_SOURCES
+from shared.db.schema import QUALITY_SOURCES
 
 router = APIRouter(prefix="/quality", tags=["quality"])
 
 _NOT_BUILT = (
     "quality table not built yet — run the matching *_quality job "
-    "(see services/ingestion/data_quality)"
+    "(see services/jobs/ingestion/data_quality)"
 )
 _DUP_NOT_BUILT = (
     "key_duplication_quality not built yet — run the "
-    "key_duplication_quality job (see services/ingestion/data_quality)"
+    "key_duplication_quality job (see services/jobs/ingestion/data_quality)"
 )
 
 
