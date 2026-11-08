@@ -7,7 +7,7 @@
 import { apiGet } from "./client";
 
 // The four profiled source tables, in display order. Mirrors the backend's
-// QUALITY_SOURCES (services/ingestion/data_quality/schema.py); the /quality
+// QUALITY_SOURCES (services/jobs/ingestion/data_quality/schema.py); the /quality
 // summary returns exactly these.
 export const QUALITY_TABLES = [
   "land_registry_sales",

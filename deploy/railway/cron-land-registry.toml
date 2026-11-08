@@ -1,0 +1,14 @@
+# Railway "Config as Code" for the Land Registry PPD monthly cron service.
+# In the service's Settings → point "Railway Config File" at this path
+# (deploy/railway/cron-land-registry.toml). Root Directory stays "/".
+#
+# HMLR's monthly PPD delta publishes around the 20th; this applies it on the
+# 23rd at 03:00 UTC. See services/jobs/ingestion/land_registry/schedules.py.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "bash services/scripts/run_jobs.sh land_registry_ppd_monthly_job"
+cronSchedule = "0 3 23 * *"
+restartPolicyType = "NEVER"

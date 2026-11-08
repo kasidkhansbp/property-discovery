@@ -1,10 +1,15 @@
 # Core pipeline dependencies for the ingestion services.
 dagster
 dagster-webserver      # the `dagster dev` UI
+dagster-postgres       # Postgres-backed run/event/schedule storage (prod instance; see dagster.yaml)
 duckdb                 # CSV -> clean Parquet
 boto3                  # Cloudflare R2 (S3-compatible) client
 psycopg[binary]        # Postgres loading
 requests               # downloading source files
+
+# ---- Shared DB layer (shared/): schema models + migrations ----
+sqlalchemy             # models in shared/db are the single source of truth
+alembic                # serving-schema migrations (shared/migrations)
 
 # ---- Gateway (read API over the serving DB; see gateway/) ----
 fastapi                # HTTP API framework for gateway/app
