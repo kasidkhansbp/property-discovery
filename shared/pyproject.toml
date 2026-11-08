@@ -1,0 +1,24 @@
+# Packaging metadata for the shared database library.
+#
+# The repo runs from source (repo root on sys.path), so installing this is
+# optional — it documents the package and its dependencies, and lets the shared
+# layer be pip-installed on its own (e.g. `pip install -e shared`) if a service
+# is ever split into its own deployable.
+
+[project]
+name = "property-discovery-shared"
+version = "0.1.0"
+description = "Shared DB models, connection, and Alembic migrations for property-discovery."
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["shared", "shared.db", "shared.db.models", "shared.migrations"]
