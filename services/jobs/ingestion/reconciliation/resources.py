@@ -14,6 +14,6 @@ downloads here, so none of the download/upload streaming helpers are needed.
 
 from __future__ import annotations
 
-from services.ingestion.land_registry.resources import PostgresResource, R2Resource
+from services.jobs.ingestion.land_registry.resources import PostgresResource, R2Resource
 
 __all__ = ["PostgresResource", "R2Resource"]

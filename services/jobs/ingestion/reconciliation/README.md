@@ -66,7 +66,7 @@ R2_BUCKET, R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, POSTGRES_DSN
 
 ## Run it (from the repo root)
 ```bash
-dagster job execute -f definitions.py -j reconciliation_full_job
+dagster job execute -f services/definitions.py -j reconciliation_full_job
 # or watch it in the UI:
 dagster dev            # then launch reconciliation_full_job
 ```

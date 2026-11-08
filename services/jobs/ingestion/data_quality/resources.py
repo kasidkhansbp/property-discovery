@@ -10,6 +10,6 @@ or DuckDB round-trip here, so no R2 resource is needed.
 
 from __future__ import annotations
 
-from services.ingestion.land_registry.resources import PostgresResource
+from services.jobs.ingestion.land_registry.resources import PostgresResource
 
 __all__ = ["PostgresResource"]

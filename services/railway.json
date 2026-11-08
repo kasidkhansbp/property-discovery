@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "services/Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "bash services/scripts/migrate.sh && bash services/scripts/run_jobs.sh epc_monthly_job land_registry_ppd_monthly_job os_open_uprn_load_job reconciliation_monthly_job mart_coverage_metrics_job land_registry_sales_quality_job epc_domestic_certificates_quality_job os_open_uprn_quality_job property_uprn_mapping_quality_job key_duplication_quality_job",
+    "cronSchedule": "0 6 24 * *",
+    "restartPolicyType": "NEVER",
+    "numReplicas": 1
+  }
+}

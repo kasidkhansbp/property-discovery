@@ -1,59 +1,30 @@
-"""Single source of truth for the OS Open UPRN schema.
+"""Pipeline projections of the OS Open UPRN schema.
 
-OS Open UPRN ships as a single Great-Britain CSV *with a header*, carrying five
-columns: UPRN, X_COORDINATE, Y_COORDINATE, LATITUDE, LONGITUDE. Describing each
-column once — its CSV header spelling, its clean cast type, its Postgres DDL
-type, and whether it's the primary key — keeps the DuckDB read, the table DDL,
-and the diff-merge from ever drifting out of sync. The derived helpers at the
-bottom project that one list into the exact strings the SQL steps need, so
-adding a column is a one-line change here.
+The schema itself — the five columns, their Postgres types, the primary key, and
+the DuckDB read metadata (source header spelling, cast type) — lives on the
+SQLAlchemy model ``OsOpenUprn`` in ``shared/db/models`` (the single source of
+truth that Alembic migrates). This module reads that model back as
+``OS_OPEN_UPRN_SCHEMA`` and projects it into the exact strings the SQL steps need,
+so the DuckDB read, the table DDL, and the diff-merge can never drift from it.
 
-The clean read matches columns to the schema **by header name** (`csv_name`),
-not by position, so a future OS release that reorders the columns still loads
-correctly — and a renamed or dropped column fails loudly at the read rather than
-silently mislabelling data.
-
-`uprn` is the natural, immutable primary key. The only columns that can actually
-change for an existing UPRN between releases are the four coordinates (OS
-improves positional accuracy over time); that's what the diff-merge's
-`CHANGED_PREDICATE` compares.
+The clean read matches columns to the schema **by header name** (``csv_name``),
+not by position, so a future OS release that reorders columns still loads — and a
+renamed/dropped column fails loudly at the read rather than mislabelling data.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from shared.db.columns import ColumnSpec, column_specs
+from shared.db.models.os_open_uprn import OsOpenUprn
 
-
-@dataclass(frozen=True)
-class ColumnDef:
-    """One OS Open UPRN column, described once for every consumer of the schema."""
-
-    name: str  # our clean, snake_case column name
-    csv_name: str  # the source header spelling in the OS Open UPRN CSV
-    csv_type: str  # cast target for the clean read (the CSV is read all_varchar)
-    pg_type: str  # Postgres DDL type for the served table
-    is_pk: bool = False  # the natural primary key (the UPRN itself)
-
-
-# The clean column set. The read matches these to the CSV BY HEADER NAME
-# (`csv_name`), so column order in the file doesn't matter. OS publishes the
-# headers in UPPER_SNAKE_CASE.
-OS_OPEN_UPRN_SCHEMA: list[ColumnDef] = [
-    # OS "UPRN" — the Unique Property Reference Number; the natural PK. Up to 12
-    # digits, so it fits comfortably in a bigint.
-    ColumnDef("uprn", "UPRN", "BIGINT", "bigint PRIMARY KEY", is_pk=True),
-    # Eastings/northings on the British National Grid (EPSG:27700), in metres.
-    ColumnDef("x_coordinate", "X_COORDINATE", "DOUBLE", "double precision"),
-    ColumnDef("y_coordinate", "Y_COORDINATE", "DOUBLE", "double precision"),
-    # WGS84 (EPSG:4326) latitude/longitude, in degrees.
-    ColumnDef("latitude", "LATITUDE", "DOUBLE", "double precision"),
-    ColumnDef("longitude", "LONGITUDE", "DOUBLE", "double precision"),
-]
+# The clean column set. Each entry carries name / csv_name / csv_type / pg_type /
+# is_pk (see ColumnSpec). The read matches these to the CSV by header name.
+OS_OPEN_UPRN_SCHEMA: list[ColumnSpec] = column_specs(OsOpenUprn)
 
 
 # --------------------------------------------------------------------------- #
 # Derived projections — the exact strings the SQL steps consume. Built from    #
-# OS_OPEN_UPRN_SCHEMA so they can never disagree with it.                      #
+# OS_OPEN_UPRN_SCHEMA so they can never disagree with the model.              #
 # --------------------------------------------------------------------------- #
 
 # Column names, in order: `uprn, x_coordinate, ...`.
@@ -75,9 +46,7 @@ CLEAN_SELECT: str = ", ".join(
 )
 
 # Postgres CREATE TABLE column list: `uprn bigint PRIMARY KEY,\n    ...`.
-PG_DDL_COLS: str = ",\n    ".join(
-    f"{c.name} {c.pg_type}" for c in OS_OPEN_UPRN_SCHEMA
-)
+PG_DDL_COLS: str = ",\n    ".join(f"{c.name} {c.pg_type}" for c in OS_OPEN_UPRN_SCHEMA)
 
 # Diff-merge UPDATE ... SET body, pulling new values from the staging alias `s`:
 # `x_coordinate = s.x_coordinate, ...` (every non-PK column).

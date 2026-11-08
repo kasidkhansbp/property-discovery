@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import dagster as dg
 
-from services.ingestion import (
+from services.jobs.ingestion import (
     data_quality,
     epc,
     land_registry,

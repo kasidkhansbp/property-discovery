@@ -1,0 +1,19 @@
+# Dagster instance config for production (Railway "service layer").
+#
+# Railway containers have an EPHEMERAL filesystem: anything written to disk is
+# lost on every redeploy. Dagster's default instance stores run history, event
+# logs and — critically — SCHEDULE STATE on local SQLite, so with the default
+# storage a redeploy would silently forget which schedules are running. We point
+# all three storages at Postgres so schedule ticks and run history survive
+# restarts. DAGSTER_PG_URL is injected on the service (see README / Railway vars);
+# it may be the same instance as the serving DB or a separate one.
+storage:
+  postgres:
+    postgres_url:
+      env: DAGSTER_PG_URL
+
+# The default run launcher runs each run as a subprocess inside this container,
+# which is what we want on a single Railway service. No extra config needed.
+
+telemetry:
+  enabled: false

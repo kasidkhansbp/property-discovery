@@ -1,0 +1,20 @@
+# Runtime dependencies for the ingestion service image (services/Dockerfile).
+#
+# Pipeline-only: this deliberately omits the gateway/frontend deps that live in
+# the repo-root requirements.txt (fastapi, uvicorn, psycopg_pool, ...), so the
+# service deploys independently and the image stays small. Where a package also
+# appears in the root file, keep the two in sync.
+#
+# `dagster job execute` (used by scripts/run_jobs.sh) ships with the base
+# `dagster` package, so no webserver is needed for the one-shot monthly run.
+
+dagster                 # asset/job framework + `dagster job execute` CLI
+dagster-postgres        # Postgres-backed run/event/schedule storage (see dagster.yaml)
+duckdb                  # CSV -> clean Parquet
+boto3                   # Cloudflare R2 (S3-compatible) client
+psycopg[binary]         # Postgres loading (bundled libpq — no apt libpq-dev needed)
+requests                # downloading source files
+
+# ---- Shared DB layer (shared/) ----
+sqlalchemy              # the models in shared/db are the schema source of truth
+alembic                 # serving-schema migrations (shared/migrations)

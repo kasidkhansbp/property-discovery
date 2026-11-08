@@ -1,7 +1,8 @@
-# Tells `dagster dev` where to start: load definitions.py from the repo root.
-# working_directory puts the repo root on sys.path so the module and its
-# `services.ingestion.*` imports resolve no matter where you launch from.
+# Tells `dagster dev` where to start: load definitions.py (next to this file).
+# Paths here resolve relative to this workspace.yaml's own directory (services/),
+# so working_directory ".." is the repo root — kept on sys.path so the file's
+# absolute `services.jobs.ingestion.*` imports resolve no matter where you launch.
 load_from:
   - python_file:
       relative_path: definitions.py
-      working_directory: .
+      working_directory: ..

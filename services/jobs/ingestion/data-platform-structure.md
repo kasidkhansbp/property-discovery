@@ -17,22 +17,37 @@ property-discovery/
 │       └── routers/            # API endpoints & routing definitions
 ├── infra/                      # Infrastructure & routing configurations
 │   └── osrm/                   # Open Source Routing Machine setup
-├── services/                   # Core business logic & data services
-│   ├── address_matcher/        # Address resolution & fuzzy matching engine
-│   ├── ingestion/              # Dagster-powered data ingestion pipelines
-│   │   ├── epc/                # Energy Performance Certificate data
-│   │   ├── geolytix/           # Geospatial data ingestion
-│   │   ├── gtfs/               # Public transit data ingestion
-│   │   ├── inspire/            # INSPIRE spatial dataset ingestion
-│   │   ├── land_registry/      # Price Paid Data (PPD) pipelines
-│   │   ├── naptan/             # NaPTAN transit stop points data
-│   │   └── osm/                # OpenStreetMap data processing
-│   ├── profile_builder/        # Property profile aggregation
-│   └── scoring/                # Valuation & land evaluation scoring models
-├── shared/                     # Shared utilities, constants, and helpers
-├── definitions.py              # Global Dagster repository / CodeLocation definitions
-├── workspace.yaml              # Dagster workspace configuration
-└── requirements.txt            # Python dependencies
+├── services/                   # Self-contained Dagster "service layer"
+│   ├── definitions.py          # Dagster repository / CodeLocation (folds all jobs in)
+│   ├── workspace.yaml          # Dagster workspace configuration
+│   ├── dagster.yaml            # Dagster instance config (Postgres run/event storage)
+│   ├── requirements.txt        # Pipeline-only Python deps
+│   ├── Dockerfile              # Builds the ingestion image (context = repo root)
+│   ├── railway.json            # Railway deploy config (monthly cron)
+│   ├── scripts/                # run_jobs.sh (entrypoint), migrate.sh, start_dagster.sh
+│   └── jobs/                   # Job packages (pipelines & engines)
+│       ├── address_matcher/    # Address resolution & fuzzy matching engine
+│       ├── ingestion/          # Dagster-powered data ingestion pipelines
+│       │   ├── epc/            # Energy Performance Certificate data
+│       │   ├── geolytix/       # Geospatial data ingestion
+│       │   ├── gtfs/           # Public transit data ingestion
+│       │   ├── inspire/        # INSPIRE spatial dataset ingestion
+│       │   ├── land_registry/  # Price Paid Data (PPD) pipelines
+│       │   ├── naptan/         # NaPTAN transit stop points data
+│       │   └── osm/            # OpenStreetMap data processing
+│       ├── profile_builder/    # Property profile aggregation
+│       └── scoring/            # Valuation & land evaluation scoring models
+├── shared/                     # Shared DB library (schema source of truth)
+│   ├── db/
+│   │   ├── base.py             # SQLAlchemy DeclarativeBase
+│   │   ├── connection.py       # sync engine/session from POSTGRES_DSN
+│   │   ├── columns.py          # ColumnSpec bridge to the pipeline's SQL builders
+│   │   ├── schema.py           # read-side constants the gateway imports
+│   │   └── models/             # one model per served/companion table
+│   ├── migrations/             # Alembic env + versioned revisions
+│   ├── alembic.ini
+│   └── pyproject.toml
+└── requirements.txt            # Repo-root deps (gateway + services + shared)
 
 # 1. The Core Tables (Master Datasets)
 These tables ingest raw data directly from external sources and are updated whenever the underlying authorities release fresh data.

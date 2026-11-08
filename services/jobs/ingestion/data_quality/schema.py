@@ -25,14 +25,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from services.ingestion.epc.schema import EPC_SCHEMA
-from services.ingestion.land_registry.schema import PPD_SCHEMA
-from services.ingestion.os_open_uprn.schema import OS_OPEN_UPRN_SCHEMA
-from services.ingestion.reconciliation.schema import (
+from services.jobs.ingestion.epc.schema import EPC_SCHEMA
+from services.jobs.ingestion.land_registry.schema import PPD_SCHEMA
+from services.jobs.ingestion.os_open_uprn.schema import OS_OPEN_UPRN_SCHEMA
+from services.jobs.ingestion.reconciliation.schema import (
     ENRICHMENT_COLUMN_TYPES,
     MASTER_COLUMNS,
 )
-from services.ingestion.reconciliation.schema import TARGET_TABLE as PUM_TABLE
+from services.jobs.ingestion.reconciliation.schema import TARGET_TABLE as PUM_TABLE
 
 # --------------------------------------------------------------------------- #
 # The served source tables. Their names mirror each service's utils.TARGET_TABLE
