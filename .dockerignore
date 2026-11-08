@@ -1,0 +1,36 @@
+# Build context excludes for services/Dockerfile (context = repo root).
+# Keeps the image small and keeps secrets / local junk out of the build.
+
+# ---- Secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Python / virtualenv ----
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Not needed by the ingestion image ----
+frontend/
+gateway/
+tests/
+infra/
+deploy/
+data/
+.git/
+.github/
+
+# ---- Dagster local instance / data artifacts ----
+.tmp_dagster_home_*/
+tmp_dagster_home_*/
+dagster_home/
+*.dagster/
+*.parquet
+*.duckdb
