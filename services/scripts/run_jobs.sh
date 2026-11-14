@@ -93,7 +93,11 @@ for job in "$@"; do
   # the job's REAL exit code (an `if ! cmd` would mask it as 0). We re-exit with
   # that same code right after notifying, so the container still fails the run.
   rc=0
-  dagster job execute -j "${job}" -w services/workspace.yaml || rc=$?
+  # Target the code location by MODULE (services/definitions.py's `defs`), not a
+  # workspace file: `dagster job execute` has no -w/--workspace option (that's a
+  # `dagster dev`/webserver flag) and errors "No such option '-w'". We cd'd to
+  # REPO_ROOT above, so `services.definitions` imports cleanly.
+  dagster job execute -j "${job}" -m services.definitions || rc=$?
   if [[ "${rc}" -ne 0 ]]; then
     notify ":red_circle: ingestion run FAILED at job \`${job}\` (exit ${rc}) on ${where}. Remaining jobs were SKIPPED. Inspect the Dagster run history in Postgres."
     exit "${rc}"
