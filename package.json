@@ -1,0 +1,8 @@
+{
+  "name": "property-discovery-railway-iac",
+  "private": true,
+  "description": "Root manifest solely so the Railway CLI can resolve the `railway` SDK imported by .railway/railway.ts (Infrastructure as Code).",
+  "devDependencies": {
+    "railway": "^3.17.0"
+  }
+}
