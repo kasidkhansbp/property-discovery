@@ -1,6 +1,7 @@
 # Development / test-only dependencies. Install with:
 #   python -m pip install -r requirements-dev.txt
 # (The runtime deps in requirements.txt are still needed to import the package.)
+# Pinned (==) to match the versions the suite runs against; see requirements.txt.
 -r requirements.txt
 
-pytest
+pytest==9.1.1

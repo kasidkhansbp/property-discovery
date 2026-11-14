@@ -1,18 +1,24 @@
 # Core pipeline dependencies for the ingestion services.
-dagster
-dagster-webserver      # the `dagster dev` UI
-dagster-postgres       # Postgres-backed run/event/schedule storage (prod instance; see dagster.yaml)
-duckdb                 # CSV -> clean Parquet
-boto3                  # Cloudflare R2 (S3-compatible) client
-psycopg[binary]        # Postgres loading
-requests               # downloading source files
+#
+# Versions are pinned (==) so every build/deploy resolves the same set — a new
+# upstream release can't silently change what ships. These are the versions the
+# test suite passes against; bump them deliberately, then re-run the tests.
+# dagster-postgres uses Dagster's integration-library version scheme (0.N.P),
+# which tracks core as 0.(N+16).P — so dagster 1.13.24 pairs with 0.29.24.
+dagster==1.13.24
+dagster-webserver==1.13.24   # the `dagster dev` UI
+dagster-postgres==0.29.24    # Postgres-backed run/event/schedule storage (prod instance; see dagster.yaml)
+duckdb==1.5.5                # CSV -> clean Parquet
+boto3==1.43.103              # Cloudflare R2 (S3-compatible) client
+psycopg[binary]==3.3.6       # Postgres loading
+requests==2.34.2             # downloading source files
 
 # ---- Shared DB layer (shared/): schema models + migrations ----
-sqlalchemy             # models in shared/db are the single source of truth
-alembic                # serving-schema migrations (shared/migrations)
+sqlalchemy==2.1.1            # models in shared/db are the single source of truth
+alembic==1.20.0              # serving-schema migrations (shared/migrations)
 
 # ---- Gateway (read API over the serving DB; see gateway/) ----
-fastapi                # HTTP API framework for gateway/app
-uvicorn[standard]      # ASGI server to run the gateway
-psycopg_pool           # connection pool the gateway holds across requests
-python-dotenv          # load repo .env in local dev (optional at runtime)
+fastapi==0.159.0             # HTTP API framework for gateway/app
+uvicorn[standard]==0.54.0    # ASGI server to run the gateway
+psycopg_pool==3.3.3          # connection pool the gateway holds across requests
+python-dotenv==1.2.3         # load repo .env in local dev (optional at runtime)

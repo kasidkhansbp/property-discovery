@@ -5,16 +5,21 @@
 # service deploys independently and the image stays small. Where a package also
 # appears in the root file, keep the two in sync.
 #
+# Versions are pinned (==) for reproducible image builds; keep each pin equal to
+# the one in the repo-root requirements.txt. dagster-postgres uses the 0.x
+# integration-library scheme that tracks core as 0.(N+16).P (dagster 1.13.24 ->
+# 0.29.24).
+#
 # `dagster job execute` (used by scripts/run_jobs.sh) ships with the base
 # `dagster` package, so no webserver is needed for the one-shot monthly run.
 
-dagster                 # asset/job framework + `dagster job execute` CLI
-dagster-postgres        # Postgres-backed run/event/schedule storage (see dagster.yaml)
-duckdb                  # CSV -> clean Parquet
-boto3                   # Cloudflare R2 (S3-compatible) client
-psycopg[binary]         # Postgres loading (bundled libpq — no apt libpq-dev needed)
-requests                # downloading source files
+dagster==1.13.24             # asset/job framework + `dagster job execute` CLI
+dagster-postgres==0.29.24    # Postgres-backed run/event/schedule storage (see dagster.yaml)
+duckdb==1.5.5                # CSV -> clean Parquet
+boto3==1.43.103              # Cloudflare R2 (S3-compatible) client
+psycopg[binary]==3.3.6       # Postgres loading (bundled libpq — no apt libpq-dev needed)
+requests==2.34.2             # downloading source files
 
 # ---- Shared DB layer (shared/) ----
-sqlalchemy              # the models in shared/db are the schema source of truth
-alembic                 # serving-schema migrations (shared/migrations)
+sqlalchemy==2.1.1            # the models in shared/db are the schema source of truth
+alembic==1.20.0              # serving-schema migrations (shared/migrations)
