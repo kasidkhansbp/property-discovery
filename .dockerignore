@@ -18,8 +18,13 @@ __pycache__/
 .ruff_cache/
 
 # ---- Not needed by the ingestion image ----
+# NOTE: do NOT add `gateway/` here. The Gateway's Nixpacks build runs from the
+# repo root and also honours this .dockerignore, so excluding gateway/ strips the
+# gateway package out of its own image and uvicorn dies with
+# "ModuleNotFoundError: No module named 'gateway'". The ingestion Dockerfile only
+# COPYs services/ and shared/, so keeping gateway/ in the context costs the
+# ingestion image nothing (it's never COPYed into it).
 frontend/
-gateway/
 tests/
 infra/
 deploy/
