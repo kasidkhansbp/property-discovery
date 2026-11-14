@@ -13,7 +13,7 @@ the dashboard.
 | Service | Root dir | Config file | Build / start | Schedule |
 |---|---|---|---|---|
 | **Postgres** | — | — | Railway DB plugin | always on |
-| **Gateway** | `/` | `gateway/railway.json` | Nixpacks → `uvicorn gateway.app.main:app --host 0.0.0.0 --port $PORT` | always on (can app-sleep) |
+| **Gateway** | `/` | `gateway/railway.json` | Nixpacks → `python -m uvicorn gateway.app.main:app --host 0.0.0.0 --port $PORT` | always on (can app-sleep) |
 | **Frontend** | `/frontend` | `frontend/railway.json` | Nixpacks → `npm run build` → `npm run start` | always on (can app-sleep) |
 | **ingestion** | `/` | `services/railway.json` | `services/Dockerfile` → `run_jobs.sh` (CMD) | 24th 06:00 UTC |
 
