@@ -1,0 +1,21 @@
+# Nixpacks build config for the Gateway service (builds from the repo root, /).
+#
+# Why this file exists:
+# The repo root carries a package.json — present only so the Railway CLI can
+# resolve the `railway` IaC SDK (.railway/railway.ts), NOT an app to build.
+# Nixpacks auto-detects that package.json and builds the Gateway as a Node
+# project, so `pip install` never runs, `uvicorn` isn't installed, and the
+# service fails to start with "uvicorn: command not found" (the /health check
+# then fails).
+#
+# Pinning the provider to Python makes Nixpacks ignore the package.json and use
+# the Python provider, which installs the root requirements.txt (fastapi,
+# uvicorn[standard], psycopg, psycopg_pool, ...) during the build. The start
+# command stays in gateway/railway.json:
+#   uvicorn gateway.app.main:app --host 0.0.0.0 --port $PORT
+#
+# Scope: only the Gateway reads this. The frontend builds from /frontend (its
+# own root) and the ingestion service builds from services/Dockerfile, so
+# neither is affected.
+
+providers = ["python"]
