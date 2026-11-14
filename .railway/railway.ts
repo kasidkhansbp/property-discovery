@@ -90,7 +90,7 @@ export default defineRailway(() => {
 
   // Project name must match your Railway project's name (adopts it instead of
   // trying to rename). Postgres is a plugin and is left out on purpose.
-  return project("property-discovery", {
+  return project("delightful-friendship", {
     resources: [gateway, frontend, ingestion],
   });
 });
