@@ -17,12 +17,18 @@
 // Then delete the three railway.json files and clear each service's
 // "Railway Config File" field so nothing is managed by both systems.
 
-import { defineRailway, project, github, service, preserve } from "railway/iac";
+import { defineRailway, project, github, service, postgres, preserve } from "railway/iac";
 
 // GitHub repo that every service builds from (owner/repo).
 const REPO = "kasidkhansbp/property-discovery";
 
 export default defineRailway(() => {
+  // Existing Postgres database — declared so IaC ADOPTS the one already in the
+  // project (named "Postgres", postgres-ssl:18) instead of destroying it.
+  // IaC treats this file as the full desired state of the environment, so any
+  // resource not listed in `resources` below is deleted on apply.
+  const db = postgres("Postgres");
+
   // Gateway — FastAPI, Nixpacks, built from the repo root (imports shared.db
   // and the root requirements.txt). Always on; can app-sleep.
   const gateway = service("Gateway", {
@@ -89,8 +95,8 @@ export default defineRailway(() => {
   });
 
   // Project name must match your Railway project's name (adopts it instead of
-  // trying to rename). Postgres is a plugin and is left out on purpose.
+  // trying to rename). Postgres (db) is listed so it is preserved, not deleted.
   return project("delightful-friendship", {
-    resources: [gateway, frontend, ingestion],
+    resources: [db, gateway, frontend, ingestion],
   });
 });
