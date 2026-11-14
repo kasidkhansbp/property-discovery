@@ -5,12 +5,26 @@ The ingestion layer deploys as **one independent, Dockerfile-built cron service*
 schedule, runs the full job chain in one container, writes to the shared
 Postgres, and exits. Its authoritative config is [`services/railway.json`](../../services/railway.json).
 
-| Service | Source | Start command | Schedule |
-|---|---|---|---|
-| **Postgres** | Railway DB plugin | — | always on |
-| **Gateway** | repo `/` | `uvicorn gateway.app.main:app --host 0.0.0.0 --port $PORT` | always on (can app-sleep) |
-| **Frontend** | repo `/frontend` | `npm run start` | always on (can app-sleep) |
-| **ingestion** | repo `/` + `services/Dockerfile` (via `services/railway.json`) | (from railway.json) | 24th 06:00 UTC |
+Every service is config-as-code: each has its own `railway.json`, so the build,
+start command, health check, schedule, and restart policy are versioned in the
+repo — you only set the root directory + config-file path (and the variables) in
+the dashboard.
+
+| Service | Root dir | Config file | Build / start | Schedule |
+|---|---|---|---|---|
+| **Postgres** | — | — | Railway DB plugin | always on |
+| **Gateway** | `/` | `gateway/railway.json` | Nixpacks → `uvicorn gateway.app.main:app --host 0.0.0.0 --port $PORT` | always on (can app-sleep) |
+| **Frontend** | `/frontend` | `frontend/railway.json` | Nixpacks → `npm run build` → `npm run start` | always on (can app-sleep) |
+| **ingestion** | `/` | `services/railway.json` | `services/Dockerfile` → `run_jobs.sh` (CMD) | 24th 06:00 UTC |
+
+**Migrations run as a pre-deploy step, not in the job container.** The ingestion
+service's `preDeployCommand` (`bash services/scripts/migrate.sh`) runs in a
+one-off container *before* the jobs start, so the schema is current before any
+load writes to it — and if it fails, Railway aborts the deploy instead of running
+jobs against a stale schema. The Dockerfile has **no `ENTRYPOINT`** (only a
+`CMD`) on purpose: Railway passes a service's start/pre-deploy command as
+arguments to an exec-form `ENTRYPOINT`, which would silently turn the migrate
+command into bogus job names and skip the migration.
 
 The ingestion service runs these 10 jobs sequentially, in dependency order, on
 the 24th of each month:
@@ -44,9 +58,12 @@ of retry-looping and burning minutes.
 > but run any given job in **exactly one** service so the downstream chain never
 > fires twice.
 
-Wiring: New Service → same GitHub repo → Settings → **Railway Config File** =
-`services/railway.json` → Root Directory `/`. The json sets the build (Dockerfile),
-start command, cron, and restart policy; you only add the variables below.
+Wiring (per service): New Service → same GitHub repo → Settings → set **Root
+Directory** and **Railway Config File** from the table above (e.g. ingestion =
+Root `/`, Config `services/railway.json`). Each json sets the build, start
+command, health check, cron, and restart policy; you only add the variables
+below. The gateway builds from repo root (`/`) because it imports `shared.db`
+and installs the root `requirements.txt`; the frontend builds from `/frontend`.
 
 ## Variables
 
@@ -69,17 +86,23 @@ start command, cron, and restart policy; you only add the variables below.
 
 ## First-time setup
 
-1. Deploy Postgres, then run **two** one-off migrations (from the ingestion
-   service shell or locally with the same env):
-   - Dagster run/event storage: `DAGSTER_HOME=/app/services dagster instance migrate`
-   - Serving schema (shared/migrations, via Alembic): `bash services/scripts/migrate.sh`
-     On a database the pipeline already populated, baseline it first instead:
-     `bash services/scripts/migrate.sh stamp 0001`, then `upgrade head` on later
-     deploys. On a fresh DB, `upgrade head` builds every table from the models.
-     (The service's start command also runs `migrate.sh` before the jobs.)
-2. Deploy Gateway, copy its public domain.
-3. Set the Frontend's `VITE_API_BASE_URL` to that domain, then deploy Frontend.
-4. Deploy the ingestion service.
+1. Deploy Postgres and set the ingestion service's variables (below).
+2. **Serving schema** — handled automatically: the ingestion service's
+   `preDeployCommand` runs `migrate.sh` (`alembic upgrade head`) on every deploy,
+   building every table from the models on a fresh DB.
+   - **Exception — a DB the pipeline already populated** (tables exist, no
+     `alembic_version` row yet): a plain `upgrade head` would try to re-create
+     existing tables and fail. Baseline it **once** before the first deploy, with
+     the Railway CLI linked to the environment:
+     `railway run --service ingestion bash services/scripts/migrate.sh stamp 0001`.
+     Later deploys then run `upgrade head` cleanly.
+3. **Dagster run/event storage** — one-off, run once against the same env:
+   `railway run --service ingestion dagster instance migrate`
+   (`DAGSTER_HOME=/app/services` is baked into the image). Dagster otherwise
+   auto-creates its tables on first use; this just keeps them version-current.
+4. Deploy Gateway, copy its public domain.
+5. Set the Frontend's `VITE_API_BASE_URL` to that domain, then deploy Frontend.
+6. Deploy the ingestion service (its pre-deploy migrate runs, then the jobs).
 
 ## Seeding the tables (one-off backfills)
 

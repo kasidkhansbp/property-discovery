@@ -5,8 +5,8 @@
 # gateway/frontend. The service's own files (definitions.py, workspace.yaml,
 # dagster.yaml, scripts/, requirements.txt) live under services/; the DB schema
 # models + Alembic migrations it imports live under shared/ (both copied below).
-# Run migrations with services/scripts/migrate.sh before the jobs (the Railway
-# startCommand and the deploy README do this).
+# Run migrations with services/scripts/migrate.sh before the jobs — the Railway
+# preDeployCommand in services/railway.json (and the deploy README) does this.
 #
 # It runs as a ONE-SHOT job: the container boots, runs the pipeline chain via
 # services/scripts/run_jobs.sh, writes to the shared Postgres, and exits. A
@@ -55,11 +55,18 @@ USER appuser
 
 # Default command: run the full monthly chain in dependency order, then exit.
 # run_jobs.sh resolves its own paths and runs the jobs sequentially under
-# `set -e`, so a step never runs on a failed upstream. Override the job list by
-# passing different args (e.g. a one-off backfill job). The *schedule* lives in
-# the platform, not here.
-ENTRYPOINT ["bash", "services/scripts/run_jobs.sh"]
-CMD ["epc_monthly_job", \
+# `set -e`, so a step never runs on a failed upstream. The *schedule* and the
+# pre-deploy schema migration live in the platform (services/railway.json), not
+# here.
+#
+# This is a plain CMD with NO ENTRYPOINT, on purpose. Railway passes a service's
+# Start Command / Pre-Deploy Command as *arguments* to any exec-form ENTRYPOINT,
+# which would turn "bash migrate.sh ..." into bogus Dagster job names and skip
+# the migration entirely. Keeping the whole launcher in CMD lets railway.json's
+# preDeployCommand run migrations cleanly, while this CMD remains the default
+# "run the jobs" command (override it to run a one-off job, e.g. a backfill).
+CMD ["bash", "services/scripts/run_jobs.sh", \
+     "epc_monthly_job", \
      "land_registry_ppd_monthly_job", \
      "os_open_uprn_load_job", \
      "reconciliation_monthly_job", \
