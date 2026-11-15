@@ -42,6 +42,7 @@ import duckdb
 import requests
 from dagster import AssetExecutionContext
 
+from ..duckdb_support import bounded_duckdb
 from .resources import PostgresResource, R2Resource
 from .schema import (
     CHANGED_PREDICATE,
@@ -61,13 +62,12 @@ STATE_TABLE = "os_open_uprn_load_state"
 
 @contextmanager
 def duckdb_con(r2: R2Resource) -> Iterator[duckdb.DuckDBPyConnection]:
-    """A DuckDB connection pre-configured for this R2 bucket, auto-closed."""
-    con = duckdb.connect()
-    try:
-        r2.configure_duckdb(con)
+    """A memory-bounded DuckDB connection pointed at this R2 bucket, auto-closed.
+
+    Thin wrapper over the shared ``bounded_duckdb`` (duckdb_support.py).
+    """
+    with bounded_duckdb(r2) as con:
         yield con
-    finally:
-        con.close()
 
 
 def _ensure_state_table(cur) -> None:

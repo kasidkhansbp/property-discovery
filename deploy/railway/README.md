@@ -82,6 +82,12 @@ and installs the root `requirements.txt`; the frontend builds from `/frontend`.
 - `DAGSTER_HOME=/app/services` — holds dagster.yaml (run_jobs.sh also defaults to it)
 - `R2_BUCKET`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
 - `EPC_API_TOKEN`
+- `DUCKDB_MEMORY_LIMIT` / `DUCKDB_THREADS` — optional, default `5GB` / `4`, sized
+  for the 8 GB service. Every DuckDB step is capped by these (see
+  `services/jobs/ingestion/duckdb_support.py`); DuckDB otherwise sizes itself
+  from the *host's* RAM and the container is OOM-killed with no traceback.
+  Raise them together with the service's memory; lower the limit if Metrics
+  still shows the run nearing the cap.
 - `ALERT_WEBHOOK_URL` — **set this.** A Slack/Discord-compatible incoming webhook;
   `run_jobs.sh` posts which job died (and a success ping) to it. Without it, a
   failed monthly run is silent until you read the logs. Optional:

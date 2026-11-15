@@ -19,6 +19,7 @@ import duckdb
 import requests
 from dagster import AssetExecutionContext
 
+from ..duckdb_support import bounded_duckdb
 from .resources import PostgresResource, R2Resource
 from .schema import COLUMNS, CSV_COLUMNS_SPEC, PG_DDL_COLS, PPD_SCHEMA, UPDATE_SET
 
@@ -30,16 +31,13 @@ STAGING_TABLE = "land_registry_sales_staging"
 def duckdb_con(r2: R2Resource) -> Iterator[duckdb.DuckDBPyConnection]:
     """A DuckDB connection pre-configured for this R2 bucket, auto-closed.
 
-    Replaces the hand-rolled ``try/finally con.close()`` at each call site: the
-    connection is opened, pointed at R2 over httpfs, yielded, and always closed
-    on exit — even if the query raises.
+    Thin wrapper over the shared ``bounded_duckdb`` (duckdb_support.py): the
+    connection is opened, pointed at R2 over httpfs, capped at
+    DUCKDB_MEMORY_LIMIT with a spill dir, yielded, and always closed on exit —
+    even if the query raises.
     """
-    con = duckdb.connect()
-    try:
-        r2.configure_duckdb(con)
+    with bounded_duckdb(r2) as con:
         yield con
-    finally:
-        con.close()
 
 
 def download_to_r2(

@@ -40,6 +40,7 @@ from typing import Iterator
 import duckdb
 from dagster import AssetExecutionContext
 
+from ..duckdb_support import bounded_duckdb
 from .resources import PostgresResource, R2Resource
 from .schema import (
     COVERAGE_METRICS_SELECT,
@@ -76,25 +77,23 @@ DEFAULT_FUZZY_THRESHOLD = 0.90
 
 @contextmanager
 def duckdb_con(r2: R2Resource) -> Iterator[duckdb.DuckDBPyConnection]:
-    """A DuckDB connection pre-configured for this R2 bucket, auto-closed.
+    """A memory-bounded, FILE-BACKED DuckDB connection pointed at R2, auto-closed.
 
-    Same helper as the other services: open, point at R2 over httpfs, yield,
-    and always close on exit — even if a query raises.
+    Thin wrapper over the shared ``bounded_duckdb`` (duckdb_support.py), with two
+    choices specific to this pipeline:
+
+    * ``on_disk=True`` — the match step materialises all of land_registry and
+      epc into DuckDB tables (``CREATE TABLE ... AS SELECT``). An in-memory
+      database cannot evict its own base tables, so under an 8 GB container cap
+      those tables alone could exceed the limit. A file-backed database (in a
+      temp dir that is removed on exit) lets the buffer manager page them to
+      disk under ``memory_limit`` instead.
+    * ``progress_bar=True`` — the exact/fuzzy joins and the big COPYs are single
+      blocking statements; the live percentage bar (captured into the step's
+      compute log) is the only sign of life while they run.
     """
-    con = duckdb.connect()
-    try:
-        r2.configure_duckdb(con)
-        # Stream a live progress bar for long-running queries. The exact/fuzzy
-        # joins and the big COPYs are single blocking statements, so without this
-        # there's nothing to watch until they finish; with it, DuckDB prints a
-        # percentage bar that Dagster captures into the step's stdout/compute log.
-        # progress_bar_time=0 shows it immediately rather than after a delay.
-        con.execute("SET enable_progress_bar = true;")
-        con.execute("SET enable_progress_bar_print = true;")
-        con.execute("SET progress_bar_time = 0;")
+    with bounded_duckdb(r2, on_disk=True, progress_bar=True) as con:
         yield con
-    finally:
-        con.close()
 
 
 def ensure_target_table(postgres: PostgresResource) -> None:

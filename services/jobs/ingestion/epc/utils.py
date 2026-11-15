@@ -25,6 +25,7 @@ import duckdb
 import requests
 from dagster import AssetExecutionContext
 
+from ..duckdb_support import DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS, bounded_duckdb
 from .resources import EpcResource, PostgresResource, R2Resource
 from .schema import COLUMNS, EPC_SCHEMA, PG_DDL_COLS, PK_COLUMN, UPDATE_SET
 
@@ -33,19 +34,18 @@ STAGING_TABLE = "epc_domestic_certificates_staging"
 
 
 @contextmanager
-def duckdb_con(r2: R2Resource) -> Iterator[duckdb.DuckDBPyConnection]:
-    """A DuckDB connection pre-configured for this R2 bucket, auto-closed.
+def duckdb_con(
+    r2: R2Resource, work_dir: str | None = None
+) -> Iterator[duckdb.DuckDBPyConnection]:
+    """A memory-bounded DuckDB connection pointed at this R2 bucket, auto-closed.
 
-    Replaces the hand-rolled ``try/finally con.close()`` at each call site: the
-    connection is opened, pointed at R2 over httpfs, yielded, and always closed
-    on exit — even if the query raises.
+    Thin wrapper over the shared ``bounded_duckdb`` (memory_limit, threads,
+    spill dir — see duckdb_support.py for why). `work_dir`, when given, hosts the
+    spill directory; the clean step passes its own so spilling shares the disk
+    freed by deleting the ZIP.
     """
-    con = duckdb.connect()
-    try:
-        r2.configure_duckdb(con)
+    with bounded_duckdb(r2, work_dir=work_dir) as con:
         yield con
-    finally:
-        con.close()
 
 
 def _clean_select() -> str:
@@ -140,11 +140,17 @@ def clean_to_parquet(
         context.log.info("Extracted %s CSV members", n)
         if n == 0:
             raise ValueError(f"No CSV members found in {raw_key}")
+        # The ZIP (~8 GB) has done its job; free that ephemeral disk before the
+        # DuckDB pass, which may need the space to spill.
+        os.remove(zip_path)
 
         # DuckDB wants forward-slash globs, even on Windows.
         glob = csv_dir.replace("\\", "/") + "/*.csv"
-        with duckdb_con(r2) as con:
-            context.log.info("DuckDB cleaning %s CSVs -> %s", n, dst)
+        with duckdb_con(r2, work_dir=work_dir) as con:
+            context.log.info(
+                "DuckDB cleaning %s CSVs -> %s (memory_limit=%s, threads=%s)",
+                n, dst, DUCKDB_MEMORY_LIMIT, DUCKDB_THREADS,
+            )
             con.execute(
                 f"""
                 COPY (
