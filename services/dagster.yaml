@@ -7,6 +7,11 @@
 # all three storages at Postgres so schedule ticks and run history survive
 # restarts. DAGSTER_PG_URL is injected on the service (see README / Railway vars);
 # it may be the same instance as the serving DB or a separate one.
+#
+# Dagster keeps Alembic's default version table name here (`alembic_version`); it
+# can share one database with the serving schema because the serving migrations
+# use a DEDICATED table instead (`serving_alembic_version`, see
+# shared/migrations/env.py), so the two never collide.
 storage:
   postgres:
     postgres_url:

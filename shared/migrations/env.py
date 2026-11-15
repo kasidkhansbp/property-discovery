@@ -21,6 +21,16 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# The serving schema may share a Postgres *database* with Dagster's run/event
+# storage (POSTGRES_DSN and DAGSTER_PG_URL can point at the same DB). Both use
+# Alembic, and Alembic's DEFAULT version table is ``alembic_version``. Dagster
+# hard-codes that default and gives no knob to rename it, so to stop the two
+# fighting over one shared ``alembic_version`` row — which crashes every job with
+# ``ResolutionError: No such revision or branch '0001'`` — WE move: the serving
+# schema records its revisions in a DEDICATED table, ``serving_alembic_version``,
+# and leaves plain ``alembic_version`` to Dagster.
+VERSION_TABLE = "serving_alembic_version"
+
 
 def run_migrations_offline() -> None:
     """Emit SQL against the URL, without a live connection."""
@@ -30,6 +40,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table=VERSION_TABLE,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -43,6 +54,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            version_table=VERSION_TABLE,
         )
         with context.begin_transaction():
             context.run_migrations()

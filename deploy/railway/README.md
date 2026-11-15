@@ -75,7 +75,10 @@ and installs the root `requirements.txt`; the frontend builds from `/frontend`.
 
 **Ingestion service**
 - `POSTGRES_DSN=${{Postgres.DATABASE_URL}}`   — serving DB the jobs write
-- `DAGSTER_PG_URL=${{Postgres.DATABASE_URL}}` — Dagster run/event storage (services/dagster.yaml)
+- `DAGSTER_PG_URL=${{Postgres.DATABASE_URL}}` — Dagster run/event storage
+  (services/dagster.yaml). Safe to share the serving database: Dagster keeps the
+  default `alembic_version` table, while the serving schema uses a dedicated
+  `serving_alembic_version` (see First-time setup §3), so they don't collide.
 - `DAGSTER_HOME=/app/services` — holds dagster.yaml (run_jobs.sh also defaults to it)
 - `R2_BUCKET`, `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
 - `EPC_API_TOKEN`
@@ -96,10 +99,29 @@ and installs the root `requirements.txt`; the frontend builds from `/frontend`.
      the Railway CLI linked to the environment:
      `railway run --service ingestion bash services/scripts/migrate.sh stamp 0001`.
      Later deploys then run `upgrade head` cleanly.
-3. **Dagster run/event storage** — one-off, run once against the same env:
-   `railway run --service ingestion dagster instance migrate`
-   (`DAGSTER_HOME=/app/services` is baked into the image). Dagster otherwise
-   auto-creates its tables on first use; this just keeps them version-current.
+3. **Dagster run/event storage** — Dagster keeps its run/event/schedule tables in
+   Postgres (`DAGSTER_PG_URL`) and version-controls them with Alembic, using
+   Alembic's default version table `alembic_version` (hard-coded, no rename). The
+   serving schema uses Alembic too, so to share one database without the two
+   fighting over that one table — which crashes every job with
+   `ResolutionError: No such revision or branch '0001'` — the **serving** migrations
+   record their revisions in a dedicated table, `serving_alembic_version`
+   (`shared/migrations/env.py`), leaving plain `alembic_version` to Dagster.
+
+   - **Fresh database:** nothing to do — the serving `migrate.sh` writes
+     `serving_alembic_version`, Dagster creates its own `alembic_version`, done.
+   - **If you deployed before this split** (the serving `migrate.sh` had already
+     written `0001` into the shared `alembic_version`), remove that stray row
+     **once** so Dagster can own the table, then redeploy:
+     ```sql
+     DROP TABLE IF EXISTS alembic_version;   -- against the shared DB
+     ```
+     On the next deploy the serving `migrate.sh` rebuilds its state in
+     `serving_alembic_version` (idempotent — `create_all` skips the tables that
+     already exist), and Dagster recreates and stamps its own `alembic_version`.
+   - Optionally, one-off to keep Dagster's tables version-current:
+     `railway run --service ingestion dagster instance migrate`
+     (`DAGSTER_HOME=/app/services` is baked into the image).
 4. Deploy Gateway, copy its public domain.
 5. Set the Frontend's `VITE_API_BASE_URL` to that domain, then deploy Frontend.
 6. Deploy the ingestion service (its pre-deploy migrate runs, then the jobs).
