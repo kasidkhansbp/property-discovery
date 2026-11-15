@@ -19,6 +19,17 @@ REPO_ROOT="$(dirname "${SERVICES_DIR}")"                    # parent of services
 # DAGSTER_HOME must be a dir containing dagster.yaml — services/ holds it.
 export DAGSTER_HOME="${DAGSTER_HOME:-${SERVICES_DIR}}"
 
+# Force Dagster's Postgres storage onto psycopg2 (see run_jobs.sh for the full
+# rationale): SQLAlchemy 2.1 defaults `postgresql://` to psycopg (v3), which can't
+# bind a parameter in `NOTIFY run_events, <payload>` and crashes every run with
+# "syntax error at or near $1". psycopg2 inlines the literal. dagster-io/dagster#34232.
+if [[ -n "${DAGSTER_PG_URL:-}" ]]; then
+  case "${DAGSTER_PG_URL}" in
+    postgresql://*) export DAGSTER_PG_URL="postgresql+psycopg2://${DAGSTER_PG_URL#postgresql://}" ;;
+    postgres://*)   export DAGSTER_PG_URL="postgresql+psycopg2://${DAGSTER_PG_URL#postgres://}" ;;
+  esac
+fi
+
 # Run from the repo root so the `services.jobs.ingestion.*` imports resolve.
 cd "${REPO_ROOT}"
 

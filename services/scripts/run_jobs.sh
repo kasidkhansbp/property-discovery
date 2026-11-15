@@ -32,6 +32,21 @@ REPO_ROOT="$(dirname "${SERVICES_DIR}")"                    # parent of services
 # services/dagster.yaml — same config the UI uses.
 export DAGSTER_HOME="${DAGSTER_HOME:-${SERVICES_DIR}}"
 
+# Force Dagster's Postgres storage onto the psycopg2 driver. SQLAlchemy 2.1
+# changed the default driver for `postgresql://` URLs from psycopg2 to psycopg
+# (v3), whose server-side parameter binding can't render dagster-postgres's
+# `NOTIFY run_events, <payload>` — Postgres forbids a bind param in NOTIFY, so it
+# renders as `NOTIFY run_events, $1` and fails with "syntax error at or near $1",
+# crashing every run the instant it records an event. psycopg2 (shipped by
+# dagster-postgres) inlines the payload as a literal, so NOTIFY works. We only
+# rewrite the scheme; the host/credentials are untouched. See dagster-io/dagster#34232.
+if [[ -n "${DAGSTER_PG_URL:-}" ]]; then
+  case "${DAGSTER_PG_URL}" in
+    postgresql://*) export DAGSTER_PG_URL="postgresql+psycopg2://${DAGSTER_PG_URL#postgresql://}" ;;
+    postgres://*)   export DAGSTER_PG_URL="postgresql+psycopg2://${DAGSTER_PG_URL#postgres://}" ;;
+  esac
+fi
+
 ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
 ALERT_ON_SUCCESS="${ALERT_ON_SUCCESS:-1}"
 # Railway injects these; used only to label the alert so you know which
