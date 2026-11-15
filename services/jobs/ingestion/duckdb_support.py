@@ -93,6 +93,18 @@ def bounded_duckdb(
         con.execute(f"SET threads = {DUCKDB_THREADS};")
         con.execute("SET preserve_insertion_order = false;")
         con.execute(f"SET temp_directory = '{_fwd(spill_dir)}';")
+        # Bound the httpfs S3 WRITER. When a COPY ... TO 's3://...' produces
+        # Parquet faster than R2 accepts it, DuckDB queues finished multipart
+        # parts in memory: by default up to s3_uploader_thread_limit (50) parts
+        # of max_filesize / max_parts (800 GB / 10000 = 80 MB) each — ~4 GB of
+        # buffers that no memory_limit stops. 8 threads x 10 MB parts caps that
+        # queue at ~80 MB; 10 MB x 10000 parts still allows a 100 GB object.
+        con.execute("SET s3_uploader_thread_limit = 8;")
+        con.execute("SET s3_uploader_max_filesize = '100GB';")
+        # Return freed memory to the OS promptly instead of holding it in the
+        # allocator; keeps the process RSS (what the cgroup kills on) close to
+        # what memory_limit thinks is in use.
+        con.execute("SET allocator_background_threads = true;")
         if progress_bar:
             # progress_bar_time=0 shows the bar immediately rather than after a
             # delay; useful for the single blocking joins/COPYs in reconciliation.
