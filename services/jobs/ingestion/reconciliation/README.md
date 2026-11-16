@@ -107,6 +107,43 @@ load logic in `utils.py`, Dagster metadata emission in the `assets.py` wrapper;
 ad-hoc admin queries (`pg_stat_activity`, `pg_locks`) are ops tooling, not these
 modules.
 
+## TODO: track the Postgres insert progress of the load step
+
+The 2026-11-16 full run showed the gap concretely: the DuckDB -> staging insert
+printed a progress bar and finished in 7 min (07:13 -> 07:20), then the
+`TRUNCATE target; INSERT INTO target SELECT ... FROM staging` phase ran for well
+over an hour with **no log line at all** — no bar, no row count, nothing until
+the final "Loaded into property_uprn_mapping" line. From the Railway logs it is
+indistinguishable from a hang. Find a way to surface progress for that phase.
+
+Candidates, roughly in order of preference:
+
+- **Chunk the copy and log per chunk.** Instead of one 50M-row INSERT, copy
+  staging -> target in slices (e.g. `WHERE transaction_id` / `uprn` hash ranges,
+  or a `row_number()` window materialised once) and `context.log.info` the
+  cumulative rows after each slice. Cheapest to build and works with any
+  Postgres; the trade-off is that the copy is no longer a single transaction, so
+  it only fits once the load-and-swap TODO above makes the target a side table
+  that nobody reads mid-load.
+- **Use `COPY` for the Postgres-side move** so `pg_stat_progress_copy` exposes
+  `tuples_processed`; the DuckDB postgres extension already uses COPY for the
+  staging insert, which is why that half was trackable at all.
+- **A heartbeat from the step itself.** Run the long statement on one connection
+  and, from the Dagster step, poll a second connection every N seconds for
+  `pg_relation_size('<side table>')` (grows as rows land; the side table is not
+  locked) and the running statement's age from `pg_stat_activity`, logging both.
+  This needs no SQL changes to the load and gives a bytes-based percentage once
+  the expected size is known from the staging table.
+- **Note what does NOT work:** DuckDB's progress bar only measures its own
+  Parquet scan, so it reaches 100% when the *staging* insert is done and says
+  nothing about the Postgres -> Postgres copy; and while `TRUNCATE` holds
+  `ACCESS EXCLUSIVE` on the live table, no other session can even read its
+  size, so any poller must look at the side/staging table, not the target.
+
+Whatever lands, keep the pattern used elsewhere: the load logic and its log
+lines in `utils.py`, the Dagster metadata (rows loaded, elapsed) emitted from
+the `assets.py` wrapper.
+
 ## TODO: carry the matched address strings in the table
 
 Today `property_uprn_mapping` stores only `transaction_id`, `uprn`, `match_score`,
