@@ -321,27 +321,66 @@ def build_master_parquet(
         )
 
         # Step C: FUZZY fallback over the exact-pass leftovers, blocked on
-        # postcode. QUALIFY keeps the single best candidate per transaction;
-        # the outer filter drops it if even the best is below threshold.
+        # postcode. Three bounded statements rather than one, because the
+        # single-statement form (postcode join -> row_number() per transaction
+        # -> threshold filter) ranked EVERY raw postcode pair — hundreds of
+        # millions of rows for ~22M leftover sales x ~14 EPC addresses per
+        # postcode — inside one window operator and OOM'd at the 5 GB cap on the
+        # 2026-11-15 full run. The decomposition below is result-identical:
+        #
+        #  (i)  dedupe the leftovers to DISTINCT (postcode, addr_key). A key
+        #       either exact-matches for every sale of that address or for
+        #       none, and the fuzzy candidates/score depend only on the key, so
+        #       repeat sales of the same address are scored once, not per sale.
+        #  (ii) score the postcode-blocked candidates and keep only those AT OR
+        #       ABOVE threshold — the same cut the old query applied after
+        #       ranking. Applying it before ranking is what bounds memory: the
+        #       window below ranks only the near-identical survivors. This is
+        #       the only table that could be large, and it is a base table of
+        #       the file-backed database, so the buffer manager can page it out.
+        #  (iii) best candidate per key (highest similarity, lowest uprn as the
+        #       stable tie-break — the old ORDER BY, unchanged), then fan back
+        #       out to the transactions that carry that key. The anti-join on
+        #       exact_matches is redundant by construction of (i) but keeps the
+        #       1:1 transaction_id guarantee independent of that reasoning.
+        con.execute(
+            """
+            CREATE TABLE fuzzy_keys AS
+            SELECT DISTINCT u.norm_postcode, u.addr_key
+            FROM lr u
+            ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id
+            WHERE u.norm_postcode <> '' AND u.addr_key <> '';
+            """
+        )
+        con.execute(
+            f"""
+            CREATE TABLE fuzzy_candidates AS
+            SELECT k.norm_postcode, k.addr_key, e.uprn,
+                   {_SIM}(k.addr_key, e.addr_key) AS similarity
+            FROM fuzzy_keys k
+            JOIN epc_addr e ON e.norm_postcode = k.norm_postcode
+            WHERE round({_SIM}(k.addr_key, e.addr_key), 4) >= {threshold};
+            """
+        )
         con.execute(
             f"""
             CREATE TABLE fuzzy_matches AS
-            SELECT transaction_id, uprn, match_score, '{MATCH_FUZZY}' AS match_type
+            SELECT u.transaction_id,
+                   b.uprn,
+                   round(b.similarity, 4) AS match_score,
+                   '{MATCH_FUZZY}' AS match_type
             FROM (
-                SELECT u.transaction_id, e.uprn,
-                       round({_SIM}(u.addr_key, e.addr_key), 4) AS match_score
-                FROM lr u
-                JOIN epc_addr e ON e.norm_postcode = u.norm_postcode
-                WHERE u.norm_postcode <> '' AND u.addr_key <> ''
-                  AND u.transaction_id NOT IN (
-                      SELECT transaction_id FROM exact_matches
-                  )
+                SELECT norm_postcode, addr_key, uprn, similarity
+                FROM fuzzy_candidates
                 QUALIFY row_number() OVER (
-                    PARTITION BY u.transaction_id
-                    ORDER BY {_SIM}(u.addr_key, e.addr_key) DESC, e.uprn
+                    PARTITION BY norm_postcode, addr_key
+                    ORDER BY similarity DESC, uprn
                 ) = 1
-            )
-            WHERE match_score >= {threshold};
+            ) b
+            JOIN lr u
+              ON u.norm_postcode = b.norm_postcode
+             AND u.addr_key = b.addr_key
+            ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id;
             """
         )
 
@@ -402,7 +441,54 @@ def build_master_parquet(
         # written as typed NULLs here, to be filled from land_registry_sales in a
         # later pass. All joins are LEFT, so an UNMATCHED_LR row (no uprn) simply
         # keeps NULL enrichment.
+        #
+        # Each enrichment source is materialised into its own table first, and
+        # the two joins run as separate statements, for the same reason Step C
+        # is decomposed: one statement that holds a Postgres scan, a 30M-row
+        # window and two hash-join build sides at once has a peak far above
+        # the memory cap, whereas each piece on its own is a single spillable
+        # operator over a base table the file-backed database can page out.
         _attach_pg(con, postgres)
+        # Coordinates for just the UPRNs that appear in the coverage set, not
+        # the whole 40M-row os_open_uprn table.
+        con.execute(
+            f"""
+            CREATE TABLE uprn_coords AS
+            SELECT o.uprn, o.latitude, o.longitude, o.x_coordinate, o.y_coordinate
+            FROM pg.{OS_OPEN_UPRN_TABLE} o
+            SEMI JOIN (
+                SELECT DISTINCT TRY_CAST(uprn AS BIGINT) AS uprn FROM coverage
+                WHERE uprn IS NOT NULL
+            ) c ON c.uprn = o.uprn;
+            """
+        )
+        # Latest certificate per UPRN (the window is the only heavy operator).
+        con.execute(
+            f"""
+            CREATE TABLE epc_latest AS
+            SELECT uprn, postcode, country FROM (
+                SELECT uprn, postcode, country,
+                       row_number() OVER (
+                           PARTITION BY uprn
+                           ORDER BY lodgement_date DESC NULLS LAST,
+                                    inspection_date DESC NULLS LAST,
+                                    certificate_number
+                       ) AS rn
+                FROM pg.{EPC_TABLE}
+                WHERE uprn IS NOT NULL AND trim(uprn) <> ''
+            ) WHERE rn = 1;
+            """
+        )
+        con.execute("DETACH pg;")
+        con.execute(
+            """
+            CREATE TABLE coverage_coords AS
+            SELECT c.transaction_id, c.uprn, c.match_score, c.match_type,
+                   o.latitude, o.longitude, o.x_coordinate, o.y_coordinate
+            FROM coverage c
+            LEFT JOIN uprn_coords o ON o.uprn = TRY_CAST(c.uprn AS BIGINT);
+            """
+        )
         con.execute(
             f"""
             COPY (
@@ -411,34 +497,19 @@ def build_master_parquet(
                     c.uprn,
                     c.match_score,
                     c.match_type,
-                    o.latitude,
-                    o.longitude,
-                    o.x_coordinate,
-                    o.y_coordinate,
+                    c.latitude,
+                    c.longitude,
+                    c.x_coordinate,
+                    c.y_coordinate,
                     e.postcode,
                     CAST(NULL AS VARCHAR) AS district,
                     CAST(NULL AS VARCHAR) AS county,
                     e.country AS constituent_country
-                FROM coverage c
-                LEFT JOIN pg.{OS_OPEN_UPRN_TABLE} o
-                       ON o.uprn = TRY_CAST(c.uprn AS BIGINT)
-                LEFT JOIN (
-                    SELECT uprn, postcode, country FROM (
-                        SELECT uprn, postcode, country,
-                               row_number() OVER (
-                                   PARTITION BY uprn
-                                   ORDER BY lodgement_date DESC NULLS LAST,
-                                            inspection_date DESC NULLS LAST,
-                                            certificate_number
-                               ) AS rn
-                        FROM pg.{EPC_TABLE}
-                        WHERE uprn IS NOT NULL AND trim(uprn) <> ''
-                    ) WHERE rn = 1
-                ) e ON e.uprn = c.uprn
+                FROM coverage_coords c
+                LEFT JOIN epc_latest e ON e.uprn = c.uprn
             ) TO '{r2.s3_url(master_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);
             """
         )
-        con.execute("DETACH pg;")
 
         n_exact, n_fuzzy, n_unmatched_lr, n_unmatched_uprn = con.execute(
             "SELECT (SELECT count(*) FROM exact_matches),"
