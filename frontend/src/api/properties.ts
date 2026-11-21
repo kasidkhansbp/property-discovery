@@ -33,6 +33,32 @@ export interface PropertiesPage {
   items: PropertyRow[];
 }
 
+/** How the gateway read the search box (see classify_search in properties_query.py). */
+export type SearchMode = "uprn" | "postcode" | "postcode_and_text" | "text";
+
+export interface PropertySearchResult {
+  q: string;
+  mode: SearchMode;
+  limit: number;
+  has_more: boolean; // more rows match than were returned
+  items: PropertyRow[];
+}
+
+/**
+ * Search properties (GET /properties/search): a UPRN, a full or partial
+ * postcode, an address containing a postcode, or free text. Best matches first,
+ * no paging. A query the gateway can't use (e.g. too short) is a 422 ApiError
+ * whose message says what to type instead.
+ */
+export function fetchPropertySearch(
+  q: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<PropertySearchResult> {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  return apiGet<PropertySearchResult>("/properties/search", params, signal);
+}
+
 /** One page of properties ordered by uprn (GET /properties). */
 export function fetchPropertiesPage(
   afterUprn: number | null,
