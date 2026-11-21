@@ -10,6 +10,7 @@ derive a prefix/country (see schema.postcode_prefix_sql).
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -182,5 +183,23 @@ class PropertiesPage(BaseModel):
     next_after_uprn: int | None = Field(
         None,
         description="Pass as after_uprn to fetch the next page; NULL on the last page",
+    )
+    items: list[PropertyRow]
+
+
+class PropertySearchResult(BaseModel):
+    """Search results for one query box input, best matches first."""
+
+    q: str = Field(description="The query as sent")
+    mode: Literal["uprn", "postcode", "postcode_and_text", "text"] = Field(
+        description=(
+            "How the query was understood: a UPRN, a (partial) postcode, an "
+            "address containing a full postcode, or free text"
+        ),
+        examples=["postcode"],
+    )
+    limit: int
+    has_more: bool = Field(
+        description="True when more rows match than were returned; refine the query"
     )
     items: list[PropertyRow]

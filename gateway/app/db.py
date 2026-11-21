@@ -51,9 +51,26 @@ def get_pool() -> ConnectionPool:
     return _pool
 
 
-def run_query(pool: ConnectionPool, sql: str, params: list[Any]) -> list[dict]:
-    """Run a read-only query on a pooled connection and return dict rows."""
+def run_query(
+    pool: ConnectionPool,
+    sql: str,
+    params: list[Any],
+    *,
+    timeout_ms: int | None = None,
+) -> list[dict]:
+    """Run a read-only query on a pooled connection and return dict rows.
+
+    With ``timeout_ms`` set, Postgres cancels the query after that long and
+    psycopg raises ``errors.QueryCanceled``. The limit is transaction-local
+    (``set_config(..., true)``), so it ends with this query and never leaks to
+    the next request that reuses the pooled connection.
+    """
     with pool.connection() as conn, conn.cursor() as cur:
+        if timeout_ms is not None:
+            cur.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                [f"{int(timeout_ms)}ms"],
+            )
         cur.execute(sql, params)
         return cur.fetchall()
 
