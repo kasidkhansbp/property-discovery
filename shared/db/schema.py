@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from .models.mart_uprn_coverage_metrics import mart_uprn_coverage_metrics
+from .models.properties import Properties
 from .models.quality import key_duplication_quality, quality_tables
 
 # --- mart_uprn_coverage_metrics (coverage dashboard rollup) --- #
@@ -46,3 +47,11 @@ QUALITY_SOURCES: dict[str, QualitySourceRef] = {
 # --- key_duplication_quality (cross-table fan-out checks) --- #
 DUPLICATION_TABLE: str = key_duplication_quality.name
 DUPLICATION_COLUMNS: list[str] = [c.name for c in key_duplication_quality.columns]
+
+# --- properties (search table, one row per UPRN) --- #
+PROPERTIES_TABLE: str = Properties.__table__.name
+# Every column except ``search_text``, which is an internal normalised copy of
+# full_address that exists only for the trigram index.
+PROPERTIES_COLUMNS: list[str] = [
+    c.name for c in Properties.__table__.columns if c.name != "search_text"
+]

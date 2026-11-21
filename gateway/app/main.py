@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import close_pool, open_pool
-from .routers import coverage, quality
+from .routers import coverage, properties, quality
 
 
 @asynccontextmanager
@@ -40,7 +40,8 @@ app = FastAPI(
         "companions: per-column coverage (how populated each column is) for "
         "land_registry_sales, epc_domestic_certificates, os_open_uprn and "
         "property_uprn_mapping, plus `/quality/duplication` for key-duplication "
-        "/ fan-out across those tables."
+        "/ fan-out across those tables. `/properties` pages through the "
+        "properties table (one row per UPRN)."
     ),
     version="0.2.0",
     lifespan=lifespan,
@@ -58,6 +59,7 @@ app.add_middleware(
 
 app.include_router(coverage.router)
 app.include_router(quality.router)
+app.include_router(properties.router)
 
 
 @app.get("/health", tags=["meta"], summary="Liveness probe")
