@@ -11,7 +11,7 @@ Built by ``services/jobs/ingestion/properties/build_properties.sql``.
 
 from __future__ import annotations
 
-from sqlalchemy import DateTime, text
+from sqlalchemy import DDL, DateTime, Index, event, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..base import Base
@@ -20,6 +20,26 @@ from ..columns import pg_column
 
 class Properties(Base):
     __tablename__ = "properties"
+
+    # The search indexes (see gateway/app/properties_query.py). Partial: about
+    # half of all UPRNs have no address, and those rows are never searched.
+    __table_args__ = (
+        # Postcode search: exact match and "starts with" (LIKE 'SW1A1%').
+        Index(
+            "properties_postcode_clean_idx",
+            "postcode_clean",
+            postgresql_ops={"postcode_clean": "text_pattern_ops"},
+            postgresql_where=text("postcode_clean IS NOT NULL"),
+        ),
+        # Address search: "contains" (LIKE '%BAKER%') and trigram similarity.
+        Index(
+            "properties_search_text_trgm_idx",
+            "search_text",
+            postgresql_using="gin",
+            postgresql_ops={"search_text": "gin_trgm_ops"},
+            postgresql_where=text("search_text IS NOT NULL"),
+        ),
+    )
 
     # os_open_uprn
     uprn = pg_column("bigint PRIMARY KEY", autoincrement=False)  # from OS, never generated
@@ -50,3 +70,13 @@ class Properties(Base):
         server_default=text("now()"),
         info={"pg_type": "timestamptz NOT NULL DEFAULT now()"},
     )
+
+
+# gin_trgm_ops needs pg_trgm. On a fresh database, migration 0001 builds every
+# table from these models before 0003 enables the extension, so enable it right
+# before this table (and its trigram index) is created.
+event.listen(
+    Properties.__table__,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS pg_trgm"),
+)
