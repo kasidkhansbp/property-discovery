@@ -29,7 +29,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from shared.db.schema import PROPERTIES_COLUMNS, PROPERTIES_TABLE
+from shared.db.schema import (
+    EPC_TABLE,
+    LAND_REGISTRY_TABLE,
+    PROPERTIES_COLUMNS,
+    PROPERTIES_TABLE,
+    UPRN_MAPPING_TABLE,
+)
 
 DEFAULT_LIMIT: int = 50
 MAX_LIMIT: int = 200
@@ -293,3 +299,90 @@ def _build_text_search(
         f"LIMIT %s"
     )
     return sql, [*like_params, TEXT_CANDIDATE_LIMIT, search.text, fetch]
+
+
+# --------------------------------------------------------------------------- #
+# History (one UPRN's sales and EPC certificates)                             #
+# --------------------------------------------------------------------------- #
+# ``GET /properties/{uprn}/history`` backs the expandable timeline under a
+# property row. Two indexed lookups, newest first:
+#
+#   sales  property_uprn_mapping (uprn idx) -> land_registry_sales (PK)
+#   epc    epc_domestic_certificates (uprn idx)
+#
+# ``uprn`` is text in both source tables, so it is bound as a string. Comparing
+# against an integer would make Postgres cast the column and skip the index.
+#
+# No row cap: the timeline must show every sale and every certificate. The
+# largest locally is one building-level UPRN with 369 linked sales.
+
+SALE_HISTORY_COLUMNS: list[str] = [
+    "transaction_id",
+    "transfer_date",
+    "price",
+    "property_type",
+    "old_new",
+    "duration",
+    "saon",
+    "paon",
+    "street",
+    "locality",
+    "town_city",
+    "postcode",
+    "ppd_category",
+]
+
+EPC_HISTORY_COLUMNS: list[str] = [
+    "certificate_number",
+    "lodgement_date",
+    "inspection_date",
+    "current_energy_rating",
+    "potential_energy_rating",
+    "current_energy_efficiency",
+    "potential_energy_efficiency",
+    "property_type",
+    "built_form",
+    "total_floor_area",
+    "construction_age_band",
+    "tenure",
+    "transaction_type",
+    "co2_emissions_current",
+    "address1",
+    "address2",
+    "address3",
+    "postcode",
+]
+
+
+def _check_uprn(uprn: int) -> str:
+    if uprn < 0:
+        raise ValueError(f"uprn must be non-negative, got {uprn}")
+    return str(uprn)
+
+
+def build_sales_history_query(uprn: int) -> tuple[str, list[Any]]:
+    """SQL + params for every Land Registry sale linked to ``uprn``, newest first.
+
+    Adds the match decision (``match_type`` / ``match_score``) so the UI can
+    flag sales attached by fuzzy matching.
+    """
+    cols = ", ".join(f"s.{c}" for c in SALE_HISTORY_COLUMNS)
+    sql = (
+        f"SELECT {cols}, m.match_type, m.match_score\n"
+        f"FROM {UPRN_MAPPING_TABLE} AS m\n"
+        f"JOIN {LAND_REGISTRY_TABLE} AS s ON s.transaction_id = m.transaction_id\n"
+        f"WHERE m.uprn = %s AND m.transaction_id IS NOT NULL\n"
+        f"ORDER BY s.transfer_date DESC NULLS LAST, s.transaction_id"
+    )
+    return sql, [_check_uprn(uprn)]
+
+
+def build_epc_history_query(uprn: int) -> tuple[str, list[Any]]:
+    """SQL + params for every EPC certificate lodged for ``uprn``, newest first."""
+    sql = (
+        f"SELECT {', '.join(EPC_HISTORY_COLUMNS)}\n"
+        f"FROM {EPC_TABLE}\n"
+        f"WHERE uprn = %s\n"
+        f"ORDER BY lodgement_date DESC NULLS LAST, certificate_number DESC"
+    )
+    return sql, [_check_uprn(uprn)]

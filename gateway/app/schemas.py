@@ -9,8 +9,9 @@ derive a prefix/country (see schema.postcode_prefix_sql).
 
 from __future__ import annotations
 
+from datetime import date as Date
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -203,3 +204,63 @@ class PropertySearchResult(BaseModel):
         description="True when more rows match than were returned; refine the query"
     )
     items: list[PropertyRow]
+
+
+# --------------------------------------------------------------------------- #
+# Property history (one UPRN's sales and EPC certificates as a timeline).     #
+# --------------------------------------------------------------------------- #
+class SaleEvent(BaseModel):
+    """One Land Registry sale linked to the UPRN by reconciliation."""
+
+    kind: Literal["sale"] = "sale"
+    date: Date | None = Field(None, description="transfer_date")
+    transaction_id: str
+    price: int | None = Field(None, examples=[540000])
+    property_type: str | None = Field(None, description="D/S/T/F/O", examples=["T"])
+    old_new: str | None = Field(None, description="Y = new build", examples=["N"])
+    duration: str | None = Field(None, description="F = freehold, L = leasehold")
+    saon: str | None = None
+    paon: str | None = None
+    street: str | None = None
+    locality: str | None = None
+    town_city: str | None = None
+    postcode: str | None = None
+    ppd_category: str | None = Field(None, description="A = standard, B = additional")
+    match_type: str = Field(examples=["EXACT"])
+    match_score: float = Field(examples=[1.0])
+
+
+class EpcEvent(BaseModel):
+    """One EPC certificate lodged for the UPRN."""
+
+    kind: Literal["epc"] = "epc"
+    date: Date | None = Field(None, description="lodgement_date")
+    certificate_number: str
+    inspection_date: Date | None = None
+    current_energy_rating: str | None = Field(None, examples=["D"])
+    potential_energy_rating: str | None = Field(None, examples=["B"])
+    current_energy_efficiency: int | None = Field(None, examples=[61])
+    potential_energy_efficiency: int | None = Field(None, examples=[84])
+    property_type: str | None = None
+    built_form: str | None = None
+    total_floor_area: float | None = Field(None, examples=[112.0])
+    construction_age_band: str | None = None
+    tenure: str | None = None
+    transaction_type: str | None = Field(None, examples=["marketed sale"])
+    co2_emissions_current: float | None = None
+    address1: str | None = None
+    address2: str | None = None
+    address3: str | None = None
+    postcode: str | None = None
+
+
+HistoryEvent = Annotated[Union[SaleEvent, EpcEvent], Field(discriminator="kind")]
+
+
+class PropertyHistory(BaseModel):
+    """Every sale and EPC certificate for one UPRN, merged newest first."""
+
+    uprn: int
+    sale_count: int
+    epc_count: int
+    events: list[HistoryEvent]

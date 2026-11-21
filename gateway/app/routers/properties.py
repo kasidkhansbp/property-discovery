@@ -7,6 +7,8 @@
     partial postcode, an address containing a postcode, or free text. Returns
     the top ``limit`` matches (no paging) plus ``has_more``; see
     ``properties_query.classify_search`` for how the input is read.
+  * ``GET /properties/{uprn}/history`` — every Land Registry sale and EPC
+    certificate for one UPRN, merged into one timeline, newest first.
 
 The total is the planner's estimate rather than ``count(*)``; see
 ``properties_query.py`` for why.
@@ -14,9 +16,10 @@ The total is the planner's estimate rather than ``count(*)``; see
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from psycopg import errors as pg_errors
 from psycopg_pool import ConnectionPool
 
@@ -26,12 +29,21 @@ from ..properties_query import (
     DEFAULT_SEARCH_LIMIT,
     MAX_LIMIT,
     MAX_SEARCH_LIMIT,
+    build_epc_history_query,
     build_properties_estimate_query,
     build_properties_page_query,
+    build_sales_history_query,
     build_search_query,
     classify_search,
 )
-from ..schemas import PropertiesPage, PropertyRow, PropertySearchResult
+from ..schemas import (
+    EpcEvent,
+    PropertiesPage,
+    PropertyHistory,
+    PropertyRow,
+    PropertySearchResult,
+    SaleEvent,
+)
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -133,4 +145,59 @@ def search_properties(
         limit=limit,
         has_more=len(rows) > limit,
         items=items,
+    )
+
+
+# History lookups are two index seeks (a few ms); anything slower is a fault.
+HISTORY_TIMEOUT_MS = 5000
+
+
+def merge_history(
+    sales: list[SaleEvent], certificates: list[EpcEvent]
+) -> list[SaleEvent | EpcEvent]:
+    """Merge both sources into one list, newest first, undated events last.
+
+    On the same day a sale sorts above a certificate: an EPC is usually lodged
+    before the sale it was made for, so newest-first puts the sale on top.
+    """
+    events: list[SaleEvent | EpcEvent] = [*sales, *certificates]
+    events.sort(key=lambda e: e.kind == "epc")
+    events.sort(key=lambda e: e.date is not None)
+    events.sort(key=lambda e: e.date or date.min, reverse=True)
+    return events
+
+
+@router.get(
+    "/{uprn}/history",
+    response_model=PropertyHistory,
+    summary="Sales and EPC certificates for one property",
+)
+def property_history(
+    pool: Annotated[ConnectionPool, Depends(get_pool)],
+    uprn: Annotated[int, Path(ge=0, le=999_999_999_999)],
+) -> PropertyHistory:
+    """Every Land Registry sale and EPC certificate for ``uprn``, newest first.
+
+    Nothing is capped: every linked sale and every certificate is returned. A
+    UPRN with no records returns empty ``events`` rather than 404.
+    """
+    sales_sql, sales_params = build_sales_history_query(uprn)
+    epc_sql, epc_params = build_epc_history_query(uprn)
+    try:
+        sale_rows = run_query(
+            pool, sales_sql, sales_params, timeout_ms=HISTORY_TIMEOUT_MS
+        )
+        epc_rows = run_query(pool, epc_sql, epc_params, timeout_ms=HISTORY_TIMEOUT_MS)
+    except pg_errors.UndefinedTable as exc:
+        raise HTTPException(
+            status_code=404, detail=f"history source table missing: {exc}"
+        ) from exc
+
+    sales = [SaleEvent(date=r.pop("transfer_date"), **r) for r in sale_rows]
+    certificates = [EpcEvent(date=r.pop("lodgement_date"), **r) for r in epc_rows]
+    return PropertyHistory(
+        uprn=uprn,
+        sale_count=len(sales),
+        epc_count=len(certificates),
+        events=merge_history(sales, certificates),
     )
