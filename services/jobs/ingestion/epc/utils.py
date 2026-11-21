@@ -201,6 +201,10 @@ def load_to_postgres(
             f"CREATE INDEX IF NOT EXISTS {TARGET_TABLE}_postcode_idx "
             f"ON {TARGET_TABLE} (postcode);"
         )
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS {TARGET_TABLE}_uprn_idx "
+            f"ON {TARGET_TABLE} (uprn);"
+        )
         cur.execute(f"DROP TABLE IF EXISTS {STAGING_TABLE};")
         cur.execute(
             f"CREATE TABLE {STAGING_TABLE} (LIKE {TARGET_TABLE} INCLUDING DEFAULTS);"

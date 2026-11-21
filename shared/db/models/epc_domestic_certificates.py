@@ -64,4 +64,6 @@ class EpcDomesticCertificates(Base):
 
     __table_args__ = (
         Index("epc_domestic_certificates_postcode_idx", "postcode"),
+        # Lets the properties refresh look up specific UPRNs without a full scan.
+        Index("epc_domestic_certificates_uprn_idx", "uprn"),
     )
