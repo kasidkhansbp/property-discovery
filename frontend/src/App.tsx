@@ -2,6 +2,7 @@ import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { CoverageDashboard } from "./pages/CoverageDashboard";
+import { PropertiesDashboard } from "./pages/PropertiesDashboard";
 import { QualityDashboard } from "./pages/QualityDashboard";
 
 // One client for the app. Defaults suit a read-only dashboard: don't refetch on
@@ -16,11 +17,12 @@ const queryClient = new QueryClient({
   },
 });
 
-type View = "coverage" | "quality";
+type View = "coverage" | "quality" | "properties";
 
 const VIEWS: { id: View; label: string }[] = [
   { id: "coverage", label: "UPRN Coverage" },
   { id: "quality", label: "Data Quality" },
+  { id: "properties", label: "Properties" },
 ];
 
 export function App() {
@@ -47,7 +49,9 @@ export function App() {
         </div>
       </nav>
 
-      {view === "coverage" ? <CoverageDashboard /> : <QualityDashboard />}
+      {view === "coverage" && <CoverageDashboard />}
+      {view === "quality" && <QualityDashboard />}
+      {view === "properties" && <PropertiesDashboard />}
     </QueryClientProvider>
   );
 }
