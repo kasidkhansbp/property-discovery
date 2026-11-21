@@ -1,11 +1,12 @@
 // Search results as a list, web-search style: a summary line, then per property
 // a small "UPRN · postcode" line, the address as the title, and a line of
 // details. Words from the query are bolded where they start a word in the
-// address.
+// address. Each result can open its sales and EPC timeline (PropertyHistory).
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
 import type { PropertyRow, PropertySearchResult, SearchMode } from "../api/properties";
+import { PropertyHistory } from "./PropertyHistory";
 
 const MODE_LABEL: Record<SearchMode, string> = {
   uprn: "UPRN",
@@ -63,6 +64,15 @@ interface PropertySearchResultsProps {
 
 export function PropertySearchResults({ result, stale, onShowMore }: PropertySearchResultsProps) {
   const { items, q, mode, has_more } = result;
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+
+  function toggle(uprn: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(uprn)) next.add(uprn);
+      return next;
+    });
+  }
 
   if (items.length === 0) {
     return (
@@ -86,19 +96,37 @@ export function PropertySearchResults({ result, stale, onShowMore }: PropertySea
       </p>
 
       <ol className="results__list">
-        {items.map((row) => (
-          <li key={row.uprn} className="result">
-            <div className="result__crumb">
-              {/* UPRNs are identifiers: no thousands separators. */}
-              <span>UPRN {row.uprn}</span>
-              {row.postcode && <span> · {highlight(row.postcode, q)}</span>}
-            </div>
-            <h3 className={`result__title${row.address_line_1 ? "" : " result__title--none"}`}>
-              {row.address_line_1 ? highlight(title(row), q) : title(row)}
-            </h3>
-            <div className="result__details">{details(row)}</div>
-          </li>
-        ))}
+        {items.map((row) => {
+          const open = expanded.has(row.uprn);
+          const historyId = `search-history-${row.uprn}`;
+          return (
+            <li key={row.uprn} className="result">
+              <div className="result__crumb">
+                {/* UPRNs are identifiers: no thousands separators. */}
+                <span>UPRN {row.uprn}</span>
+                {row.postcode && <span> · {highlight(row.postcode, q)}</span>}
+              </div>
+              <h3 className={`result__title${row.address_line_1 ? "" : " result__title--none"}`}>
+                {row.address_line_1 ? highlight(title(row), q) : title(row)}
+              </h3>
+              <div className="result__details">{details(row)}</div>
+              <button
+                type="button"
+                className="link-button result__history-toggle"
+                aria-expanded={open}
+                aria-controls={open ? historyId : undefined}
+                onClick={() => toggle(row.uprn)}
+              >
+                {open ? "▾ Hide sales & EPC history" : "▸ Show sales & EPC history"}
+              </button>
+              {open && (
+                <div id={historyId}>
+                  <PropertyHistory uprn={row.uprn} />
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
 
       {has_more && (

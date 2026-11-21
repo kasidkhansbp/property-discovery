@@ -675,3 +675,193 @@ button:disabled {
 .results__back .link-button {
   margin-top: 0;
 }
+
+/* ---- Property history (expandable timeline) -------------------------------- */
+
+.properties-table .property-row {
+  cursor: pointer;
+}
+
+.coverage-table tbody tr.property-row--open {
+  background: var(--accent-weak);
+}
+
+.row-toggle {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 0 6px 0 0;
+  width: 18px;
+  font-size: 12px;
+}
+
+.property-row:hover .row-toggle,
+.row-toggle[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+/* The sub-row is a container, not a data row: no hover tint, no nowrap. */
+.coverage-table tbody tr.history-subrow,
+.coverage-table tbody tr.history-subrow:hover {
+  background: var(--bg);
+}
+
+.coverage-table tbody tr.history-subrow > td {
+  padding: 4px 14px 14px 38px;
+  white-space: normal;
+}
+
+.history {
+  max-width: 1100px;
+  white-space: normal;
+}
+
+.history__summary,
+.history__status {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.history__status--error {
+  color: var(--danger);
+}
+
+.history__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* Undo the outer table's rules where they reach the nested one. */
+.history__table thead th {
+  position: static;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.history__table th,
+.history__table td {
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  white-space: normal;
+}
+
+.history__table tr:last-child td {
+  border-bottom: none;
+}
+
+.history__table th.num,
+.history__table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-table tbody .history__table tr:hover {
+  background: var(--accent-weak);
+}
+
+.history__date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.history__headline {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.history__address {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.history__score {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.history__rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history__arrow {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.history__ref {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kind-badge,
+.match-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kind-badge--sale {
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.kind-badge--epc {
+  background: color-mix(in srgb, #2e9d5b 16%, transparent);
+  color: #2e9d5b;
+}
+
+.match-badge {
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.match-badge--fuzzy {
+  border-color: #c98a12;
+  color: #c98a12;
+}
+
+/* EPC bands, the familiar green-to-red scale. White text on every band. */
+.epc-band {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.epc-band--a { background: #00804a; }
+.epc-band--b { background: #19a05a; }
+.epc-band--c { background: #6aab2e; }
+.epc-band--d { background: #c9a400; }
+.epc-band--e { background: #e08a1e; }
+.epc-band--f { background: #d9641c; }
+.epc-band--g { background: #c8202e; }
+.epc-band--none { background: var(--muted); }
+
+.result__history-toggle {
+  margin-top: 6px;
+  font-size: 13px;
+}

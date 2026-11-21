@@ -11,8 +11,11 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from .models.epc_domestic_certificates import EpcDomesticCertificates
+from .models.land_registry_sales import LandRegistrySales
 from .models.mart_uprn_coverage_metrics import mart_uprn_coverage_metrics
 from .models.properties import Properties
+from .models.property_uprn_mapping import property_uprn_mapping
 from .models.quality import key_duplication_quality, quality_tables
 
 # --- mart_uprn_coverage_metrics (coverage dashboard rollup) --- #
@@ -55,3 +58,8 @@ PROPERTIES_TABLE: str = Properties.__table__.name
 PROPERTIES_COLUMNS: list[str] = [
     c.name for c in Properties.__table__.columns if c.name != "search_text"
 ]
+
+# --- per-UPRN history sources (sales via the reconciliation bridge, EPC) --- #
+LAND_REGISTRY_TABLE: str = LandRegistrySales.__table__.name
+EPC_TABLE: str = EpcDomesticCertificates.__table__.name
+UPRN_MAPPING_TABLE: str = property_uprn_mapping.name

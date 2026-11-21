@@ -69,3 +69,66 @@ export function fetchPropertiesPage(
   if (afterUprn != null) params.set("after_uprn", String(afterUprn));
   return apiGet<PropertiesPage>("/properties", params, signal);
 }
+
+// --- One property's history (GET /properties/{uprn}/history) ---------------
+// Mirrors SaleEvent / EpcEvent / PropertyHistory in gateway/app/schemas.py.
+
+/** A Land Registry sale linked to the UPRN by reconciliation. */
+export interface SaleEvent {
+  kind: "sale";
+  date: string | null; // transfer_date, YYYY-MM-DD
+  transaction_id: string;
+  price: number | null;
+  property_type: string | null; // D / S / T / F / O
+  old_new: string | null; // Y = new build
+  duration: string | null; // F = freehold, L = leasehold
+  saon: string | null;
+  paon: string | null;
+  street: string | null;
+  locality: string | null;
+  town_city: string | null;
+  postcode: string | null;
+  ppd_category: string | null; // A = standard, B = additional
+  match_type: string; // EXACT / FUZZY
+  match_score: number;
+}
+
+/** An EPC certificate lodged for the UPRN. */
+export interface EpcEvent {
+  kind: "epc";
+  date: string | null; // lodgement_date, YYYY-MM-DD
+  certificate_number: string;
+  inspection_date: string | null;
+  current_energy_rating: string | null;
+  potential_energy_rating: string | null;
+  current_energy_efficiency: number | null;
+  potential_energy_efficiency: number | null;
+  property_type: string | null;
+  built_form: string | null;
+  total_floor_area: number | null;
+  construction_age_band: string | null;
+  tenure: string | null;
+  transaction_type: string | null;
+  co2_emissions_current: number | null;
+  address1: string | null;
+  address2: string | null;
+  address3: string | null;
+  postcode: string | null;
+}
+
+export type HistoryEvent = SaleEvent | EpcEvent;
+
+export interface PropertyHistory {
+  uprn: number;
+  sale_count: number;
+  epc_count: number;
+  events: HistoryEvent[]; // every sale and certificate, newest first (no cap)
+}
+
+/** Every sale and EPC certificate for one UPRN, merged newest first. */
+export function fetchPropertyHistory(
+  uprn: number,
+  signal?: AbortSignal,
+): Promise<PropertyHistory> {
+  return apiGet<PropertyHistory>(`/properties/${uprn}/history`, undefined, signal);
+}
