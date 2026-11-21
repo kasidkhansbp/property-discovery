@@ -178,9 +178,10 @@ export function PropertyHistory({ uprn }: { uprn: number }) {
   if (events.length === 0) {
     return (
       <div className="history history__status history__status--empty">
-        <strong>No sales or EPC data available for this property.</strong> It has never
-        been sold (no Land Registry sale is linked to this UPRN) and has no EPC
-        certificate.
+        <strong>No sales or EPC data available for this property.</strong> It may not
+        have been sold since Land Registry records began in 1995, or a sale may exist
+        that hasn't been matched to this UPRN. No EPC certificate was found for it
+        either.
       </div>
     );
   }
@@ -188,14 +189,15 @@ export function PropertyHistory({ uprn }: { uprn: number }) {
   return (
     <div className="history">
       <p className="history__summary">
-        {sale_count > 0 ? plural(sale_count, "sale", "sales") : <strong>Never sold</strong>}
+        {sale_count > 0 ? plural(sale_count, "sale", "sales") : <strong>No recorded sales</strong>}
         {" · "}
         {epc_count > 0 ? (
           plural(epc_count, "EPC certificate", "EPC certificates")
         ) : (
           <strong>No EPC data available</strong>
         )}
-        {sale_count === 0 && " · no Land Registry sale is linked to this UPRN"}
+        {sale_count === 0 &&
+          " · possibly not sold since 1995, or a sale hasn't been matched to this UPRN"}
       </p>
       <table className="history__table">
         <thead>
