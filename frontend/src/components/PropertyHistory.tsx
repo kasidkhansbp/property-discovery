@@ -140,6 +140,18 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+function errorMessage(err: unknown) {
+  if (err instanceof ApiError) {
+    return `Couldn't load history: ${err.message} (HTTP ${err.status}).`;
+  }
+  // fetch() rejects with a TypeError when no response arrived at all: the
+  // gateway is down, the URL is wrong, or the network dropped.
+  if (err instanceof TypeError) {
+    return "Couldn't reach the gateway to load history. Check that it is running, then retry.";
+  }
+  return `Couldn't load history: ${String(err)}.`;
+}
+
 export function PropertyHistory({ uprn }: { uprn: number }) {
   const history = usePropertyHistory(uprn);
 
@@ -148,11 +160,12 @@ export function PropertyHistory({ uprn }: { uprn: number }) {
   }
 
   if (history.isError) {
-    const err = history.error;
+    // A failed request says nothing about the house, so it is never shown as
+    // "no data": that would claim a property was never sold when the gateway
+    // simply didn't answer.
     return (
       <div className="history history__status history__status--error" role="alert">
-        Couldn't load history:{" "}
-        {err instanceof ApiError ? `${err.message} (HTTP ${err.status})` : String(err)}{" "}
+        {errorMessage(history.error)}{" "}
         <button type="button" className="link-button" onClick={() => history.refetch()}>
           Retry
         </button>
@@ -164,8 +177,10 @@ export function PropertyHistory({ uprn }: { uprn: number }) {
 
   if (events.length === 0) {
     return (
-      <div className="history history__status">
-        No recorded sales and no EPC certificates for this UPRN.
+      <div className="history history__status history__status--empty">
+        <strong>No sales or EPC data available for this property.</strong> It has never
+        been sold (no Land Registry sale is linked to this UPRN) and has no EPC
+        certificate.
       </div>
     );
   }
@@ -173,9 +188,14 @@ export function PropertyHistory({ uprn }: { uprn: number }) {
   return (
     <div className="history">
       <p className="history__summary">
-        {plural(sale_count, "sale", "sales")} · {plural(epc_count, "EPC certificate", "EPC certificates")}
-        {sale_count === 0 && " · no sales linked to this UPRN"}
-        {epc_count === 0 && " · no EPC certificates"}
+        {sale_count > 0 ? plural(sale_count, "sale", "sales") : <strong>Never sold</strong>}
+        {" · "}
+        {epc_count > 0 ? (
+          plural(epc_count, "EPC certificate", "EPC certificates")
+        ) : (
+          <strong>No EPC data available</strong>
+        )}
+        {sale_count === 0 && " · no Land Registry sale is linked to this UPRN"}
       </p>
       <table className="history__table">
         <thead>

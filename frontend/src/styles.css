@@ -865,3 +865,9 @@ button:disabled {
   margin-top: 6px;
   font-size: 13px;
 }
+
+.history__status--empty strong,
+.history__summary strong {
+  color: var(--text);
+  font-weight: 600;
+}
