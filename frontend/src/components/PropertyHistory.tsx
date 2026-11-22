@@ -134,20 +134,20 @@ const TABLE_COLUMNS: ColumnsType<HistoryEvent> = [
   {
     title: "Date",
     key: "date",
-    width: 120,
+    width: 100,
     render: (_, e) => <span className="nowrap">{formatDate(e.date)}</span>,
   },
   {
     title: "Event",
     key: "kind",
-    width: 80,
+    width: 68,
     render: (_, e) => <KindTag kind={e.kind} label={e.kind === "sale" ? "Sale" : "EPC"} />,
   },
   {
     title: "Price / rating",
     key: "headline",
     align: "right",
-    width: 140,
+    width: 112,
     render: (_, e) =>
       e.kind === "sale" ? (
         <Text strong className="nowrap">
@@ -177,12 +177,12 @@ const TABLE_COLUMNS: ColumnsType<HistoryEvent> = [
   {
     title: "Link / reference",
     key: "ref",
-    width: 170,
+    width: 132,
     render: (_, e) => {
       if (e.kind === "epc") {
         return (
           <Tooltip title="Certificate number">
-            <Text type="secondary" className="nowrap mono" style={{ fontSize: 12 }}>
+            <Text type="secondary" className="mono" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
               {e.certificate_number}
             </Text>
           </Tooltip>
@@ -211,7 +211,9 @@ function HistoryTable({ events }: { events: HistoryEvent[] }) {
       dataSource={events}
       rowKey={eventKey}
       pagination={false}
-      scroll={{ x: "max-content" }}
+      // Fixed layout at 100% width: Details takes what the fixed columns leave
+      // and wraps, so the whole table fits without a horizontal scrollbar.
+      tableLayout="fixed"
     />
   );
 }
