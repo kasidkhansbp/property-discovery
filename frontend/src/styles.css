@@ -940,3 +940,45 @@ button:disabled {
 .epc-band--f { background: #d9641c; }
 .epc-band--g { background: #c8202e; }
 .epc-band--none { background: var(--muted); }
+
+/* ---- Google Maps link ---- */
+
+/* Reads as a link: underlined text, a map pin, and an external-link arrow. */
+.maps-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.maps-link__text {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.maps-link:hover .maps-link__text {
+  text-decoration-color: currentColor;
+}
+
+.maps-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.maps-link__external {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
