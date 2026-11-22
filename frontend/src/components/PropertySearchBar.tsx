@@ -4,6 +4,14 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+const EXAMPLES = [
+  "SW1A 1BG",
+  "SW1A 1",
+  "1 marlborough rd SW1A 1BG",
+  "baker street tipton",
+  "100023336956",
+];
+
 interface PropertySearchBarProps {
   /** The submitted query; the box resets to it when it changes from outside. */
   value: string;
@@ -44,6 +52,7 @@ export function PropertySearchBar({ value, onSearch, busy }: PropertySearchBarPr
           value={draft}
           maxLength={200}
           autoComplete="off"
+          enterKeyHint="search"
           spellCheck={false}
           onChange={(e) => setDraft(e.target.value)}
         />
@@ -61,11 +70,23 @@ export function PropertySearchBar({ value, onSearch, busy }: PropertySearchBarPr
           Search
         </button>
       </div>
-      <p className="search__hint">
-        e.g. <code>SW1A 1BG</code> · <code>SW1A 1</code> ·{" "}
-        <code>1 marlborough rd SW1A 1BG</code> · <code>baker street tipton</code> ·{" "}
-        <code>100023336956</code>
-      </p>
+      {/* Tappable examples: on a phone, typing one is the slow part. */}
+      <div className="search__hint">
+        <span>e.g.</span>
+        {EXAMPLES.map((ex) => (
+          <button
+            key={ex}
+            type="button"
+            className="search__example"
+            onClick={() => {
+              setDraft(ex);
+              onSearch(ex);
+            }}
+          >
+            {ex}
+          </button>
+        ))}
+      </div>
     </form>
   );
 }

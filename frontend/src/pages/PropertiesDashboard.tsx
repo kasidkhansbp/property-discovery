@@ -6,15 +6,21 @@
 // (null = first page) and the current page uses the last one. Next pushes the
 // page's next_after_uprn, Prev pops, First resets — so every page, however
 // deep, is one fast index seek, and going back is served from cache. The
-// cursors survive a search, so clearing it returns to the same table page.
+// cursors live above the router (useBrowseCursors), so they survive a search
+// and a visit to a property: coming back returns to the same table page.
+//
+// The submitted search lives in the URL (?q=...&more=1), so Back from a
+// property screen returns to the same results, and a search can be shared.
 
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { CursorPagination } from "../components/CursorPagination";
 import { PropertiesTable } from "../components/PropertiesTable";
 import { PropertySearchBar } from "../components/PropertySearchBar";
 import { PropertySearchResults } from "../components/PropertySearchResults";
+import { useBrowseCursors } from "../hooks/useBrowseCursors";
 import { PROPERTIES_PAGE_SIZE, usePropertiesPage } from "../hooks/useProperties";
 import {
   SEARCH_MAX_LIMIT,
@@ -23,17 +29,20 @@ import {
 } from "../hooks/usePropertySearch";
 
 export function PropertiesDashboard() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchLimit, setSearchLimit] = useState(SEARCH_PAGE_SIZE);
+  const [params, setParams] = useSearchParams();
+  const searchQuery = params.get("q")?.trim() ?? "";
+  const searchLimit = params.get("more") === "1" ? SEARCH_MAX_LIMIT : SEARCH_PAGE_SIZE;
   const search = usePropertySearch(searchQuery, searchLimit);
   const searching = searchQuery.length > 0;
-  // Owned here, not by the table, so a search (which unmounts the table)
-  // doesn't lose the page you were on.
-  const [cursors, setCursors] = useState<Cursors>([null]);
 
   function runSearch(q: string) {
-    setSearchQuery(q);
-    setSearchLimit(SEARCH_PAGE_SIZE);
+    // A new search is a new history entry, so Back returns to what was before.
+    setParams(q ? { q } : {});
+  }
+
+  function showMore() {
+    // Same results, just more of them: replace, don't add a history entry.
+    setParams({ q: searchQuery, more: "1" }, { replace: true });
   }
 
   return (
@@ -54,11 +63,11 @@ export function PropertiesDashboard() {
         <SearchSection
           search={search}
           canShowMore={searchLimit < SEARCH_MAX_LIMIT}
-          onShowMore={() => setSearchLimit(SEARCH_MAX_LIMIT)}
+          onShowMore={showMore}
           onClear={() => runSearch("")}
         />
       ) : (
-        <AllProperties cursors={cursors} setCursors={setCursors} />
+        <AllProperties />
       )}
     </div>
   );
@@ -139,15 +148,8 @@ function SearchBody({
   );
 }
 
-type Cursors = (number | null)[];
-
-function AllProperties({
-  cursors,
-  setCursors,
-}: {
-  cursors: Cursors;
-  setCursors: Dispatch<SetStateAction<Cursors>>;
-}) {
+function AllProperties() {
+  const [cursors, setCursors] = useBrowseCursors();
   const page = cursors.length - 1;
   const properties = usePropertiesPage(cursors[page]);
 

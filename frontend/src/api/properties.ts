@@ -59,6 +59,19 @@ export function fetchPropertySearch(
   return apiGet<PropertySearchResult>("/properties/search", params, signal);
 }
 
+/**
+ * One property by UPRN, or null if there is no such UPRN. There is no
+ * GET /properties/{uprn}: the search endpoint's UPRN mode is an exact
+ * `WHERE uprn = ...` lookup, so it serves the same purpose.
+ */
+export async function fetchProperty(
+  uprn: number,
+  signal?: AbortSignal,
+): Promise<PropertyRow | null> {
+  const result = await fetchPropertySearch(String(uprn), 1, signal);
+  return result.items.find((row) => row.uprn === uprn) ?? null;
+}
+
 /** One page of properties ordered by uprn (GET /properties). */
 export function fetchPropertiesPage(
   afterUprn: number | null,

@@ -1,11 +1,21 @@
 // Search results as a list, web-search style: a summary line, then per property
 // a small "UPRN · postcode" line, the address as the title, and a line of
 // details. Words from the query are bolded where they start a word in the
-// address. Each result can open its sales and EPC timeline (PropertyHistory).
+// address.
+//
+// What a result does depends on the experience (see useIsDesktop):
+//   desktop - a "Show sales & EPC history" toggle expands the history inline.
+//   mobile  - the whole result is one tap target that opens the property
+//             screen, and the details line drops coordinates and sources
+//             (they are on that screen, under "Data & provenance").
 
 import { Fragment, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import type { PropertyRow, PropertySearchResult, SearchMode } from "../api/properties";
+import { useIsDesktop } from "../hooks/useIsDesktop";
+import { propertyLinkState, propertyPath } from "../routes";
+import { MapsLink } from "./MapsLink";
 import { PropertyHistory } from "./PropertyHistory";
 
 const MODE_LABEL: Record<SearchMode, string> = {
@@ -46,12 +56,14 @@ function title(row: PropertyRow) {
   return [row.address_line_1, row.posttown].filter(Boolean).join(", ");
 }
 
-function details(row: PropertyRow) {
+function details(row: PropertyRow, full: boolean) {
   const parts = [row.property_type, row.built_form, row.country].filter(Boolean);
-  if (row.latitude != null && row.longitude != null) {
-    parts.push(`${coordFmt.format(row.latitude)}, ${coordFmt.format(row.longitude)}`);
+  if (full) {
+    if (row.latitude != null && row.longitude != null) {
+      parts.push(`${coordFmt.format(row.latitude)}, ${coordFmt.format(row.longitude)}`);
+    }
+    if (row.address_source) parts.push(`address from ${row.address_source}`);
   }
-  if (row.address_source) parts.push(`address from ${row.address_source}`);
   return parts.join(" · ");
 }
 
@@ -64,6 +76,7 @@ interface PropertySearchResultsProps {
 
 export function PropertySearchResults({ result, stale, onShowMore }: PropertySearchResultsProps) {
   const { items, q, mode, has_more } = result;
+  const isDesktop = useIsDesktop();
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
 
   function toggle(uprn: number) {
@@ -97,10 +110,8 @@ export function PropertySearchResults({ result, stale, onShowMore }: PropertySea
 
       <ol className="results__list">
         {items.map((row) => {
-          const open = expanded.has(row.uprn);
-          const historyId = `search-history-${row.uprn}`;
-          return (
-            <li key={row.uprn} className="result">
+          const summary = (
+            <>
               <div className="result__crumb">
                 {/* UPRNs are identifiers: no thousands separators. */}
                 <span>UPRN {row.uprn}</span>
@@ -109,19 +120,47 @@ export function PropertySearchResults({ result, stale, onShowMore }: PropertySea
               <h3 className={`result__title${row.address_line_1 ? "" : " result__title--none"}`}>
                 {row.address_line_1 ? highlight(title(row), q) : title(row)}
               </h3>
-              <div className="result__details">{details(row)}</div>
-              <button
-                type="button"
-                className="link-button result__history-toggle"
-                aria-expanded={open}
-                aria-controls={open ? historyId : undefined}
-                onClick={() => toggle(row.uprn)}
-              >
-                {open ? "▾ Hide sales & EPC history" : "▸ Show sales & EPC history"}
-              </button>
+              <div className="result__details">{details(row, isDesktop)}</div>
+            </>
+          );
+
+          if (!isDesktop) {
+            return (
+              <li key={row.uprn} className="result result--mobile">
+                <Link
+                  to={propertyPath(row.uprn)}
+                  state={propertyLinkState(row)}
+                  className="result__link"
+                >
+                  {summary}
+                  <span className="result__chevron" aria-hidden="true">
+                    ›
+                  </span>
+                </Link>
+              </li>
+            );
+          }
+
+          const open = expanded.has(row.uprn);
+          const historyId = `search-history-${row.uprn}`;
+          return (
+            <li key={row.uprn} className="result">
+              {summary}
+              <div className="result__actions">
+                <button
+                  type="button"
+                  className="link-button result__history-toggle"
+                  aria-expanded={open}
+                  aria-controls={open ? historyId : undefined}
+                  onClick={() => toggle(row.uprn)}
+                >
+                  {open ? "▾ Hide sales & EPC history" : "▸ Show sales & EPC history"}
+                </button>
+                <MapsLink row={row} />
+              </div>
               {open && (
                 <div id={historyId}>
-                  <PropertyHistory uprn={row.uprn} />
+                  <PropertyHistory uprn={row.uprn} variant="table" />
                 </div>
               )}
             </li>
