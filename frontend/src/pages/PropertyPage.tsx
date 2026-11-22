@@ -1,10 +1,27 @@
-// The property screen (/property/:uprn): one house, full screen.
+// The property screen (/property/:uprn): one house, full screen. Built from
+// Ant Design components.
 //
 // Built for a phone first: a top bar with Back and Share, then a hero card
 // (address, key facts, last sale, latest EPC), then the full timeline, then
 // the technical fields tucked into "Data & provenance". On wide screens the
 // hero and provenance sit in a left column beside the timeline.
 
+import { LeftOutlined, LinkOutlined, ShareAltOutlined } from "@ant-design/icons";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Collapse,
+  Descriptions,
+  Flex,
+  Result,
+  Row,
+  Skeleton,
+  Statistic,
+  Tag,
+  Typography,
+} from "antd";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
@@ -14,7 +31,9 @@ import { MapsLink } from "../components/MapsLink";
 import { formatDate, priceFmt, PropertyHistory, Rating } from "../components/PropertyHistory";
 import { useProperty } from "../hooks/useProperty";
 import { usePropertyHistory } from "../hooks/usePropertyHistory";
-import { DEFAULT_TITLE, type PropertyLinkState } from "../routes";
+import { DEFAULT_TITLE, setLastViewedUprn, type PropertyLinkState } from "../routes";
+
+const { Text, Title } = Typography;
 
 const coordFmt = new Intl.NumberFormat("en-GB", {
   minimumFractionDigits: 5,
@@ -39,6 +58,10 @@ export function PropertyPage() {
   const row = property.data;
 
   useEffect(() => {
+    if (uprn != null) setLastViewedUprn(uprn);
+  }, [uprn]);
+
+  useEffect(() => {
     if (row) document.title = `${headline(row)} · ${DEFAULT_TITLE}`;
     return () => {
       document.title = DEFAULT_TITLE;
@@ -56,12 +79,15 @@ export function PropertyPage() {
 
   return (
     <div className="property-page">
+      {/* antd has no mobile top bar, so this one is ours, with antd buttons. */}
       <header className="detail-bar">
-        <button type="button" className="detail-bar__back" onClick={goBack}>
-          <span aria-hidden="true">‹</span> Back
-        </button>
-        <span className="detail-bar__title">{row ? headline(row) : ""}</span>
-        {row && <ShareButton title={headline(row)} />}
+        <Button type="text" size="large" icon={<LeftOutlined />} onClick={goBack} className="detail-bar__btn">
+          Back
+        </Button>
+        <Text strong ellipsis className="detail-bar__title">
+          {row ? headline(row) : ""}
+        </Text>
+        {row ? <ShareButton title={headline(row)} /> : <span className="detail-bar__spacer" />}
       </header>
 
       <PageBody uprn={uprn} property={property} />
@@ -84,13 +110,17 @@ function PageBody({
     const err = property.error;
     return (
       <div className="property-page__body">
-        <div className="banner banner--error" role="alert">
-          <strong>Couldn’t load this property.</strong>{" "}
-          {err instanceof ApiError ? `${err.message} (HTTP ${err.status})` : String(err)}
-          <button type="button" onClick={() => property.refetch()}>
-            Retry
-          </button>
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          message="Couldn’t load this property."
+          description={err instanceof ApiError ? `${err.message} (HTTP ${err.status})` : String(err)}
+          action={
+            <Button size="small" danger onClick={() => property.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -103,10 +133,16 @@ function PageBody({
 
   return (
     <div className="property-page__body">
-      {row ? <Hero row={row} /> : <div className="property-hero skeleton skeleton--hero" />}
+      {row ? (
+        <Hero row={row} />
+      ) : (
+        <Card className="property-hero">
+          <Skeleton active paragraph={{ rows: 5 }} />
+        </Card>
+      )}
 
       <section className="property-page__timeline" aria-labelledby="timeline-heading">
-        <h2 id="timeline-heading" className="section-heading">
+        <h2 id="timeline-heading" className="eyebrow section-eyebrow">
           History
         </h2>
         <PropertyHistory uprn={uprn} variant="timeline" />
@@ -124,60 +160,70 @@ function Hero({ row }: { row: PropertyRow }) {
   const lastSale = events.find((e): e is SaleEvent => e.kind === "sale");
   const latestEpc = events.find((e): e is EpcEvent => e.kind === "epc");
   const place = [row.posttown, row.postcode].filter(Boolean).join(" · ");
-  const facts = [row.property_type, row.built_form, row.country].filter(Boolean);
+  const facts = [row.property_type, row.built_form, row.country].filter(Boolean) as string[];
+  // While history loads, the stats show a skeleton; if it failed, a dash (the
+  // timeline below shows the error and a Retry).
+  const lastSoldValue: number | string = history.isError
+    ? "—"
+    : lastSale
+      ? (lastSale.price ?? "—")
+      : "No sales";
+  const epcFallback = history.isError ? "—" : "No EPC";
 
   return (
-    <section className="property-hero" aria-label="Property summary">
-      <h1 className={`property-hero__title${row.address_line_1 ? "" : " property-hero__title--none"}`}>
+    <Card className="property-hero" aria-label="Property summary">
+      <Title level={3} style={{ margin: 0 }} type={row.address_line_1 ? undefined : "secondary"} italic={!row.address_line_1}>
         {headline(row)}
-      </h1>
-      {place && <p className="property-hero__place">{place}</p>}
-
-      {facts.length > 0 && (
-        <ul className="chips" aria-label="Key facts">
-          {facts.map((f) => (
-            <li key={f} className="chip">
-              {f}
-            </li>
-          ))}
-        </ul>
+      </Title>
+      {place && (
+        <Text type="secondary" style={{ fontSize: 15 }}>
+          {place}
+        </Text>
       )}
 
-      <div className="stats">
-        <div className="stat">
-          <div className="stat__label">Last sold</div>
-          {history.isPending ? (
-            <div className="skeleton skeleton--line" />
-          ) : lastSale ? (
-            <>
-              <div className="stat__value">
-                {lastSale.price != null ? priceFmt.format(lastSale.price) : "—"}
-              </div>
-              <div className="stat__sub">{formatDate(lastSale.date)}</div>
-            </>
-          ) : (
-            <div className="stat__value stat__value--none">{history.isError ? "—" : "No sales"}</div>
-          )}
-        </div>
-        <div className="stat">
-          <div className="stat__label">Energy rating</div>
-          {history.isPending ? (
-            <div className="skeleton skeleton--line" />
-          ) : latestEpc ? (
-            <>
-              <div className="stat__value">
-                <Rating band={latestEpc.current_energy_rating} size="lg" />
-              </div>
-              <div className="stat__sub">{formatDate(latestEpc.date)}</div>
-            </>
-          ) : (
-            <div className="stat__value stat__value--none">{history.isError ? "—" : "No EPC"}</div>
-          )}
-        </div>
-      </div>
+      {facts.length > 0 && (
+        <Flex wrap gap={6} style={{ marginTop: 14 }} aria-label="Key facts">
+          {facts.map((f) => (
+            <Tag key={f} style={{ marginInlineEnd: 0 }}>
+              {f}
+            </Tag>
+          ))}
+        </Flex>
+      )}
 
-      <MapsLink row={row} className="button-secondary property-hero__map" />
-    </section>
+      <Row gutter={10} style={{ marginTop: 16 }}>
+        <Col span={12}>
+          <Card size="small" className="property-stat">
+            <Statistic
+              title={<span className="eyebrow">Last sold</span>}
+              loading={history.isPending}
+              value={lastSoldValue}
+              formatter={(v) => (typeof v === "number" ? priceFmt.format(v) : v)}
+              valueStyle={typeof lastSoldValue === "number" ? undefined : { fontSize: 15 }}
+            />
+            {lastSale && <Text type="secondary" style={{ fontSize: 12 }}>{formatDate(lastSale.date)}</Text>}
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card size="small" className="property-stat">
+            <Statistic
+              title={<span className="eyebrow">Energy rating</span>}
+              loading={history.isPending}
+              value={latestEpc ? " " : epcFallback}
+              valueRender={(node) =>
+                latestEpc ? <Rating band={latestEpc.current_energy_rating} size="lg" /> : node
+              }
+              valueStyle={latestEpc ? undefined : { fontSize: 15 }}
+            />
+            {latestEpc && <Text type="secondary" style={{ fontSize: 12 }}>{formatDate(latestEpc.date)}</Text>}
+          </Card>
+        </Col>
+      </Row>
+
+      <div style={{ marginTop: 14 }}>
+        <MapsLink row={row} variant="button" />
+      </div>
+    </Card>
   );
 }
 
@@ -203,17 +249,28 @@ function Provenance({ row }: { row: PropertyRow }) {
   ];
 
   return (
-    <details className="provenance">
-      <summary>Data &amp; provenance</summary>
-      <dl className="provenance__list">
-        {fields.map(([label, value]) => (
-          <div key={label} className="provenance__item">
-            <dt>{label}</dt>
-            <dd>{value ?? "—"}</dd>
-          </div>
-        ))}
-      </dl>
-    </details>
+    <Collapse
+      className="provenance"
+      items={[
+        {
+          key: "provenance",
+          label: <span className="eyebrow">Data &amp; provenance</span>,
+          children: (
+            <Descriptions
+              column={1}
+              size="small"
+              layout="vertical"
+              colon={false}
+              items={fields.map(([label, value]) => ({
+                key: label,
+                label,
+                children: <span style={{ overflowWrap: "anywhere" }}>{value ?? "—"}</span>,
+              }))}
+            />
+          ),
+        },
+      ]}
+    />
   );
 }
 
@@ -221,7 +278,7 @@ function ShareButton({ title }: { title: string }) {
   const [copied, setCopied] = useState(false);
   const canShare = typeof navigator.share === "function";
   const canCopy = typeof navigator.clipboard?.writeText === "function";
-  if (!canShare && !canCopy) return null;
+  if (!canShare && !canCopy) return <span className="detail-bar__spacer" />;
 
   async function share() {
     const url = window.location.href;
@@ -243,19 +300,31 @@ function ShareButton({ title }: { title: string }) {
   }
 
   return (
-    <button type="button" className="detail-bar__action" onClick={share}>
-      {canShare ? "Share" : copied ? "Link copied" : "Copy link"}
-    </button>
+    <Button
+      type="text"
+      size="large"
+      className="detail-bar__btn"
+      icon={canShare ? <ShareAltOutlined /> : <LinkOutlined />}
+      onClick={share}
+    >
+      {canShare ? "Share" : copied ? "Copied" : "Copy link"}
+    </Button>
   );
 }
 
 function NotFound({ text }: { text: string }) {
   return (
     <div className="property-page__body">
-      <div className="banner">
-        <p>{text}</p>
-        <Link to="/properties">Search properties</Link>
-      </div>
+      <Result
+        status="404"
+        title="Property not found"
+        subTitle={text}
+        extra={
+          <Link to="/properties">
+            <Button type="primary">Search properties</Button>
+          </Link>
+        }
+      />
     </div>
   );
 }

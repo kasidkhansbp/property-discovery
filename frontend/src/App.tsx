@@ -11,8 +11,6 @@ import {
 
 import { BrowseCursorsProvider } from "./hooks/useBrowseCursors";
 import { CoverageDashboard } from "./pages/CoverageDashboard";
-import { PropertiesDashboard } from "./pages/PropertiesDashboard";
-import { PropertyPage } from "./pages/PropertyPage";
 import { QualityDashboard } from "./pages/QualityDashboard";
 
 // One client for the app. Defaults suit a read-only dashboard: don't refetch on
@@ -45,7 +43,14 @@ function Layout() {
     <div className={`app${detail ? " app--detail" : ""}`}>
       <nav className="appnav">
         <div className="appnav__inner">
-          <span className="appnav__brand">Property Discovery</span>
+          {/* The brand: a solid brand-blue tile (TPMguild's "indigo" logo
+              tile) plus the wordmark, which waits for room on phones. */}
+          <Link to="/" className="appnav__brand" aria-label="Property Discovery home">
+            <span className="brand-tile" aria-hidden="true">
+              PD
+            </span>
+            <span className="appnav__wordmark">Property Discovery</span>
+          </Link>
           <div className="appnav__tabs">
             {VIEWS.map((v) => {
               const active = v.prefixes.some((p) => pathname.startsWith(p));
@@ -78,8 +83,17 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/coverage" replace /> },
       { path: "coverage", element: <CoverageDashboard /> },
       { path: "quality", element: <QualityDashboard /> },
-      { path: "properties", element: <PropertiesDashboard /> },
-      { path: "property/:uprn", element: <PropertyPage /> },
+      // Lazy: the Properties screens (and Ant Design with them) load on first
+      // visit. The router waits for the chunk before rendering, so there's no
+      // flash, and Back still restores scroll (the chunk is cached by then).
+      {
+        path: "properties",
+        lazy: () => import("./pages/propertiesRoutes").then((m) => ({ Component: m.PropertiesRoute })),
+      },
+      {
+        path: "property/:uprn",
+        lazy: () => import("./pages/propertiesRoutes").then((m) => ({ Component: m.PropertyRoute })),
+      },
       { path: "*", element: <Navigate to="/coverage" replace /> },
     ],
   },

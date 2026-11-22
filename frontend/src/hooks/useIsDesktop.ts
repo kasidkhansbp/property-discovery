@@ -4,13 +4,13 @@
 //   desktop - clicking a property expands its history inline, under the row
 //   mobile  - tapping a property opens the full-screen /property/:uprn screen
 //
-// The breakpoint is the same 720px the stylesheet uses (see styles.css), so
+// The breakpoint is antd's `md` (768px), which styles.css also uses, so
 // the behaviour and the layout always switch together. It updates live when
 // the window is resized or a tablet is rotated.
 
 import { useSyncExternalStore } from "react";
 
-export const DESKTOP_MEDIA_QUERY = "(min-width: 720px)";
+export const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 function subscribe(onChange: () => void) {
   const mql = window.matchMedia(DESKTOP_MEDIA_QUERY);

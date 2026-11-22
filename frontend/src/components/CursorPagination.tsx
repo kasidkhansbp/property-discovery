@@ -1,6 +1,10 @@
 // Page controls for keyset paging: First / Prev / Next only. There's no Last or
 // jump-to-page because the API has no offset (deep offsets are slow on ~42M
-// rows). The total is a planner estimate, so it's shown with a "~".
+// rows), which is also why antd's numbered <Pagination> doesn't fit. The total
+// is a planner estimate, so it's shown with a "~".
+
+import { DoubleLeftOutlined, LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { Button, Flex, Space, Typography } from "antd";
 
 interface CursorPaginationProps {
   page: number; // zero-based
@@ -33,8 +37,8 @@ export function CursorPagination({
   const atStart = page === 0;
 
   return (
-    <div className="pagination">
-      <div className="pagination__caption">
+    <Flex wrap justify="space-between" align="center" gap={12} style={{ marginTop: 14 }}>
+      <Typography.Text type="secondary">
         {rowsOnPage === 0 ? (
           "No rows"
         ) : (
@@ -44,22 +48,20 @@ export function CursorPagination({
             <strong>{numberFmt.format(estimatedTotal)}</strong>
           </>
         )}
-        {busy && <span className="pagination__busy"> · updating…</span>}
-      </div>
-      <div className="pagination__controls">
-        <button type="button" onClick={onFirst} disabled={atStart}>
-          « First
-        </button>
-        <button type="button" onClick={onPrev} disabled={atStart}>
-          ‹ Prev
-        </button>
-        <span className="pagination__page">
+        {busy && <Typography.Text type="secondary"> · updating…</Typography.Text>}
+      </Typography.Text>
+      <Space wrap>
+        <Button icon={<DoubleLeftOutlined />} onClick={onFirst} disabled={atStart} aria-label="First page" />
+        <Button icon={<LeftOutlined />} onClick={onPrev} disabled={atStart}>
+          Prev
+        </Button>
+        <Typography.Text type="secondary">
           Page {numberFmt.format(page + 1)} of ~{numberFmt.format(pageCount)}
-        </span>
-        <button type="button" onClick={onNext} disabled={!hasNext}>
-          Next ›
-        </button>
-      </div>
-    </div>
+        </Typography.Text>
+        <Button onClick={onNext} disabled={!hasNext}>
+          Next <RightOutlined />
+        </Button>
+      </Space>
+    </Flex>
   );
 }

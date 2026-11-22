@@ -1,8 +1,9 @@
 // The search box on the Properties screen. It edits a local draft and only
 // searches on submit (Enter or the Search button), like a web search engine:
-// no request per keystroke. The × button clears the box and the search.
+// no request per keystroke. The clear (×) icon clears the box and the search.
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Flex, Input, Tag, Typography } from "antd";
+import { useEffect, useState } from "react";
 
 const EXAMPLES = [
   "SW1A 1BG",
@@ -21,72 +22,56 @@ interface PropertySearchBarProps {
 
 export function PropertySearchBar({ value, onSearch, busy }: PropertySearchBarProps) {
   const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setDraft(value), [value]);
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    onSearch(draft.trim());
-  }
-
-  function clear() {
-    setDraft("");
-    onSearch("");
-    inputRef.current?.focus();
+  function run(q: string) {
+    setDraft(q);
+    onSearch(q.trim());
   }
 
   return (
-    <form className="search" role="search" onSubmit={submit}>
-      <div className={`search__box${busy ? " search__box--busy" : ""}`}>
-        <svg className="search__icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M20 20l-4.2-4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-        <input
-          ref={inputRef}
-          type="search"
-          className="search__input"
+    <div className="property-search" role="search">
+      {/* Sticky on phones (see styles.css); the examples scroll away. */}
+      <div className="property-search__bar">
+        <Input.Search
+          size="large"
           aria-label="Search properties"
           placeholder="Search by address, postcode or UPRN"
           value={draft}
           maxLength={200}
           autoComplete="off"
-          enterKeyHint="search"
           spellCheck={false}
+          enterKeyHint="search"
+          allowClear
+          enterButton="Search"
+          loading={busy}
           onChange={(e) => setDraft(e.target.value)}
+          // Fires on Enter, the button, and the clear icon (with an empty value).
+          onSearch={(q, _e, info) => run(info?.source === "clear" ? "" : q)}
         />
-        {draft && (
-          <button
-            type="button"
-            className="search__clear"
-            aria-label="Clear search"
-            onClick={clear}
-          >
-            ×
-          </button>
-        )}
-        <button type="submit" className="search__submit" disabled={!draft.trim()}>
-          Search
-        </button>
       </div>
       {/* Tappable examples: on a phone, typing one is the slow part. */}
-      <div className="search__hint">
-        <span>e.g.</span>
+      <Flex wrap gap={6} align="center" className="property-search__examples">
+        <Typography.Text type="secondary">e.g.</Typography.Text>
         {EXAMPLES.map((ex) => (
-          <button
+          <Tag
             key={ex}
-            type="button"
-            className="search__example"
-            onClick={() => {
-              setDraft(ex);
-              onSearch(ex);
+            className="property-search__example"
+            role="button"
+            tabIndex={0}
+            onClick={() => run(ex)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                run(ex);
+              }
             }}
           >
             {ex}
-          </button>
+          </Tag>
         ))}
-      </div>
-    </form>
+      </Flex>
+    </div>
   );
 }

@@ -1,29 +1,37 @@
+/* Colours, shape and type follow TPMguild's design system (same company, so
+   the products should feel like one family): warm paper, near-black ink, one
+   electric-blue accent, sharp 4px corners, Arial, mono uppercase eyebrows.
+   Values are TPMguild's own tokens; the comments give their names. Light
+   only, like TPMguild. The antd theme (AntdTheme.tsx) mirrors these. */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --border: #e3e6ea;
-  --text: #1c2430;
-  --muted: #6b7482;
-  --accent: #2f6feb;
-  --accent-weak: #e8f0fe;
-  --danger: #c0352b;
-  --radius: 8px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f141b;
-    --surface: #161c25;
-    --border: #273040;
-    --text: #e6eaf0;
-    --muted: #9aa5b5;
-    --accent: #5b8def;
-    --accent-weak: #1b2433;
-    --danger: #ef6a60;
-    --shadow: none;
-  }
+  --bg: #fafaf7; /* paper */
+  --surface: #fafaf7; /* paper: surfaces sit on paper, set apart by lines */
+  --surface-2: #f3f2ec; /* paper-2: subtle fills (stats, table heads) */
+  --surface-3: #eceae2; /* paper-3 */
+  --border: #e8e6df; /* line */
+  --border-strong: #d6d3ca; /* line-2 */
+  --text: #131218; /* ink */
+  --text-2: #2a2830; /* ink-2 */
+  --muted: #55525e; /* ink-3 */
+  --faint: #8a8690; /* ink-4 */
+  --accent: #2e3be6;
+  --accent-hover: #2431bf; /* accent-2 */
+  --accent-weak: #2e3be614; /* accent-wash */
+  --success: #2f7a4f; /* verified */
+  --success-weak: #2f7a4f1a;
+  --warn: #b8621f;
+  --warn-weak: #b8621f1a;
+  --danger: #a8322c;
+  --danger-weak: #a8322c1a;
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-md: 8px;
+  --shadow: 0 1px 2px #1312180a, 0 4px 12px #1312180f; /* shadow-1 */
+  --shadow-2: 0 8px 32px #1312181f, 0 2px 6px #1312180d;
+  --font: Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", Courier, ui-monospace, SFMono-Regular, monospace;
+  --nav-h: 56px;
+  color-scheme: light;
 }
 
 * {
@@ -34,9 +42,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button {
@@ -51,8 +61,11 @@ button:disabled {
 
 /* ---- Top nav ------------------------------------------------------------- */
 
+/* TPMguild-style nav: translucent paper with blur, ink underline on the active tab. */
 .appnav {
-  background: var(--surface);
+  background: #fafaf7d9;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -62,56 +75,108 @@ button:disabled {
 .appnav__inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 8px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  gap: 24px;
-  height: 52px;
+  gap: 32px;
+  height: var(--nav-h);
 }
 
-/* Mobile first: the tabs scroll sideways and the brand waits for more room. */
+/* Mobile first: the tabs scroll sideways; the brand tile always shows, the
+   wordmark waits for more room. */
 .appnav__brand {
-  display: none;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
   white-space: nowrap;
+}
+
+.appnav__wordmark {
+  display: none;
+}
+
+/* Brand colour: a solid brand-blue tile, like TPMguild's "indigo" logo tile. */
+.brand-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .appnav__tabs {
   display: flex;
-  gap: 4px;
+  gap: 24px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-@media (min-width: 720px) {
+@media (min-width: 768px) {
   .appnav__inner {
     padding: 0 20px;
   }
 
-  .appnav__brand {
+  .appnav__wordmark {
     display: inline;
+  }
+
+  .appnav__tabs {
+    gap: 32px;
   }
 }
 
 .appnav__tab {
+  position: relative;
   display: inline-block;
   white-space: nowrap;
   text-decoration: none;
   background: transparent;
   border: none;
-  color: var(--muted);
-  font-weight: 600;
-  padding: 16px 12px;
-  border-bottom: 2px solid transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 18px 0;
 }
 
-.appnav__tab:hover {
+.appnav__tab:hover,
+.appnav__tab--active {
   color: var(--text);
 }
 
-.appnav__tab--active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+.appnav__tab--active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--text);
+}
+
+/* Small mono uppercase label, TPMguild's "eyebrow". */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
 }
 
 .dashboard {
@@ -120,7 +185,7 @@ button:disabled {
   padding: 16px 16px 48px;
 }
 
-@media (min-width: 720px) {
+@media (min-width: 768px) {
   .dashboard {
     padding: 24px 20px 64px;
   }
@@ -208,10 +273,10 @@ button:disabled {
 
 .quality-section__meta code,
 .coverage-table code {
-  background: var(--accent-weak);
-  color: var(--accent);
+  background: var(--surface-3);
+  color: var(--text-2);
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius);
   font-size: 12px;
 }
 
@@ -293,7 +358,7 @@ button:disabled {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  box-shadow: var(--shadow-2);
   padding: 8px;
 }
 
@@ -301,18 +366,18 @@ button:disabled {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: var(--surface-2);
   color: var(--text);
   margin-bottom: 6px;
 }
 
 .multiselect__clear {
   width: 100%;
-  background: var(--accent-weak);
-  color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px;
   margin-bottom: 6px;
 }
@@ -327,11 +392,11 @@ button:disabled {
   align-items: center;
   gap: 8px;
   padding: 6px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 .multiselect__option:hover {
-  background: var(--accent-weak);
+  background: var(--surface-2);
 }
 
 .multiselect__empty {
@@ -382,7 +447,7 @@ button:disabled {
 }
 
 .coverage-table tbody tr:hover {
-  background: var(--accent-weak);
+  background: var(--surface-2);
 }
 
 .th-sort {
@@ -442,7 +507,7 @@ button:disabled {
 }
 
 .pagination__busy {
-  color: var(--accent);
+  color: var(--muted);
 }
 
 .pagination__controls {
@@ -455,13 +520,13 @@ button:disabled {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 7px 11px;
 }
 
 .pagination__controls button:not(:disabled):hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--muted);
+  color: var(--text);
 }
 
 .pagination__page {
@@ -495,446 +560,216 @@ button:disabled {
   background: var(--danger);
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px 12px;
 }
 
-/* ---- Properties ---------------------------------------------------------- */
+/* ---- Properties (Ant Design) ------------------------------------------------
+   The Properties tab is built from antd components, themed in App.tsx. What's
+   left here is layout and the few things antd doesn't have: the mobile top
+   bar, the tap-target result cards, and the EPC band colours. Mobile first:
+   base rules are for phones, `min-width: 768px` (antd's md) for desktop. */
 
-.properties-empty {
-  text-align: center;
-  color: var(--muted);
-  padding: 24px;
+.nowrap {
+  white-space: nowrap;
 }
 
-/* ---- Property search ------------------------------------------------------ */
+/* TPMguild chip: pill, small, medium weight (colours set per kind). */
+.kind-chip.ant-tag {
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-inline-end: 0;
+}
 
-.search {
-  margin: 20px 0 24px;
+.section-eyebrow {
+  margin: 0 0 10px;
+}
+
+/* Page titles: Arial semibold with TPMguild's slight negative tracking. */
+.dashboard h1,
+.dashboard .ant-typography h3,
+.dashboard h3.ant-typography,
+.property-hero h3.ant-typography {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Search hero ----
+   Brand colour rule: the blue accent means brand and action. Search is the
+   main action, so it is the hero and its button is the boldest blue on screen.
+   Shaped like TPMguild's search bar: 4px corners, 1px line, solid blue submit
+   flush on the right. */
+
+.search-hero {
+  margin: 4px 0 20px;
   max-width: 720px;
 }
 
-.search__box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 4px 4px 16px;
-  box-shadow: var(--shadow);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.search__box:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-weak);
-}
-
-.search__box--busy .search__icon {
-  color: var(--accent);
-}
-
-.search__icon {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  color: var(--muted);
-}
-
-.search__input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 16px;
-  padding: 8px 0;
-}
-
-/* Our own × replaces the browser's built-in clear button. */
-.search__input::-webkit-search-cancel-button {
-  display: none;
-}
-
-.search__clear {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
-  padding: 0 6px;
-}
-
-.search__clear:hover {
-  color: var(--text);
-}
-
-.search__submit {
-  border: none;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  padding: 8px 18px;
+.search-hero__title.ant-typography {
+  margin: 6px 0 4px;
+  font-size: 26px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.search__hint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 4px 0;
-  color: var(--muted);
+.search-hero__sub {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .search-hero {
+    margin: 16px 0 28px;
+  }
+
+  .search-hero__title.ant-typography {
+    font-size: 32px;
+  }
+}
+
+.property-search {
+  margin-top: 16px;
+}
+
+/* Phones: the bar sticks under the nav, so Search stays in thumb reach. */
+.property-search__bar {
+  position: sticky;
+  top: var(--nav-h);
+  z-index: 20;
+  margin: 0 -16px;
+  padding: 8px 16px;
+  background: var(--bg);
+}
+
+@media (min-width: 768px) {
+  .property-search__bar {
+    position: static;
+    margin: 0;
+    padding: 0;
+    background: none;
+  }
+}
+
+.property-search .ant-input-affix-wrapper,
+.property-search .ant-input-search-button {
+  height: 48px;
+}
+
+.property-search .ant-input-search-button {
+  padding-inline: 20px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+@media (min-width: 768px) {
+  .property-search .ant-input-search-button {
+    padding-inline: 32px;
+  }
+}
+
+/* "You are here": a 2px brand-blue left edge on the expanded row or result,
+   and on the one you just came back from. */
+.properties-table .property-row--open > td:first-child,
+.properties-table .property-row--last-viewed > td:first-child,
+.properties-table .ant-table-expanded-row > td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.result--open.ant-list-item,
+.result--mobile.result--last-viewed.ant-list-item {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 12px;
+}
+
+/* 16px stops iOS zooming into the field on focus. */
+.property-search input {
+  font-size: 16px;
+}
+
+.property-search__examples {
+  margin-top: 10px;
   font-size: 12px;
 }
 
-.search__example {
-  min-height: 32px;
-  border: 1px solid var(--border);
+/* TPMguild "outline" chip. */
+.property-search__example.ant-tag {
+  cursor: pointer;
+  margin-inline-end: 0;
+  padding: 2px 10px;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--accent);
-  padding: 0 10px;
-  font-size: 12px;
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.property-search__example.ant-tag:hover {
+  border-color: var(--muted);
+  color: var(--text);
 }
 
 .results {
   max-width: 720px;
-  transition: opacity 0.15s;
-}
-
-.results--stale {
-  opacity: 0.6;
 }
 
 .results__summary {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 0 0 12px;
+  display: block;
+  margin: 0 0 8px;
 }
 
-.results__tip {
-  color: var(--muted);
-  margin: 0 0 16px;
+.results__back.ant-btn {
+  padding-inline: 4px;
+  margin-bottom: 8px;
+  color: var(--text-2);
 }
 
-.results__tip--warn {
-  color: var(--text);
-  background: var(--accent-weak);
-  border-radius: var(--radius);
-  padding: 12px 16px;
+.results__more {
+  margin: 16px 0;
 }
 
-.results__list {
-  list-style: none;
+.result__title.ant-typography {
   margin: 0;
-  padding: 0;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.result {
-  padding: 12px 0;
-}
-
-.result + .result {
-  border-top: 1px solid var(--border);
-}
-
-.result__crumb {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.result__title {
-  margin: 2px 0 4px;
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--accent);
-  line-height: 1.3;
+@media (hover: hover) {
+  .result__link:hover .result__title.ant-typography {
+    text-decoration: underline;
+  }
 }
 
 .result__title b {
   font-weight: 700;
 }
 
-.result__title--none {
+.result__title--none.ant-typography {
   color: var(--muted);
   font-style: italic;
 }
 
-.result__details {
-  color: var(--text);
-  font-size: 13px;
+.result__history-toggle.ant-btn {
+  padding-inline: 4px;
+  color: var(--text-2);
 }
 
-.results__more {
-  margin: 16px 0;
-  color: var(--muted);
-}
-
-.results__more button {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--accent);
-  border-radius: 999px;
-  padding: 8px 18px;
-}
-
-.results__more button:not(:disabled):hover {
-  border-color: var(--accent);
-}
-
-.link-button {
-  border: none;
-  background: none;
-  color: var(--accent);
-  padding: 0;
-  margin-top: 8px;
-}
-
-.link-button:hover {
-  text-decoration: underline;
-}
-
-.results__back {
-  margin: -8px 0 12px;
-}
-
-.results__back .link-button {
-  margin-top: 0;
-}
-
-/* ---- Properties table ---------------------------------------------------- */
-
-.properties-table .property-row {
-  cursor: pointer;
-}
-
-.properties-table td a {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-/* Mobile first: UPRN, address and postcode only. The rest from 720px up. */
-.properties-table .col-opt {
-  display: none;
-}
-
-.properties-table__address {
-  white-space: normal;
-  min-width: 140px;
-}
-
-@media (min-width: 720px) {
-  .properties-table .col-opt {
-    display: table-cell;
-  }
-
-  .properties-table__address {
-    white-space: nowrap;
-  }
-}
-
-/* ---- Desktop: inline history under an expanded row --------------------------- */
-
-.coverage-table tbody tr.property-row--open {
-  background: var(--accent-weak);
-}
-
-.row-toggle {
-  border: none;
-  background: none;
-  color: var(--muted);
-  padding: 0 6px 0 0;
-  width: 18px;
-  font-size: 12px;
-}
-
-.property-row:hover .row-toggle,
-.row-toggle[aria-expanded="true"] {
-  color: var(--accent);
-}
-
-/* The sub-row is a container, not a data row: no hover tint, no nowrap. */
-.coverage-table tbody tr.history-subrow,
-.coverage-table tbody tr.history-subrow:hover {
-  background: var(--bg);
-}
-
-.coverage-table tbody tr.history-subrow > td {
-  padding: 4px 14px 14px 38px;
-  white-space: normal;
-}
-
-.history--table {
-  max-width: 1100px;
-  white-space: normal;
-}
-
-.history--table .history__summary,
-.history--table.history__status {
-  font-size: 12px;
-  margin: 8px 0;
-}
-
-.history__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-/* Undo the outer table's rules where they reach the nested one. */
-.history__table thead th {
-  position: static;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.history__table th,
-.history__table td {
-  padding: 7px 10px;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--border);
-  white-space: normal;
-}
-
-.history__table tr:last-child td {
-  border-bottom: none;
-}
-
-.history__table th.num,
-.history__table td.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.coverage-table tbody .history__table tr:hover {
-  background: var(--accent-weak);
-}
-
-.history__date {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.history__headline {
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.history__address {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.history__score {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.history__rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.history__arrow {
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.history__ref {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.match-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.match-badge--fuzzy {
-  border-color: #c98a12;
-  color: #c98a12;
-}
-
-.result__history-toggle {
-  margin-top: 6px;
-  font-size: 13px;
-}
-
-.result__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 20px;
-}
-
-.maps-link {
-  color: var(--accent);
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.maps-link:hover {
-  text-decoration: underline;
-}
-
-.history-subrow__actions {
-  margin-top: 8px;
-}
-
-.history-subrow__actions:empty {
-  display: none;
-}
-
-/* ---- Search result cards ---------------------------------------------------- */
-
-/* Mobile: the link carries the padding, so the whole card is the tap target. */
-.result--mobile {
+/* Mobile: the link fills the list item, so the whole card is the tap target. */
+.result--mobile.ant-list-item {
   padding: 0;
 }
 
-/* The whole result is one link: a big tap target with a chevron hint. */
 .result__link {
   position: relative;
   display: block;
+  width: 100%;
   padding: 12px 28px 12px 0;
   color: inherit;
-  text-decoration: none;
-  border-radius: var(--radius);
   -webkit-tap-highlight-color: transparent;
 }
 
 .result__link:active {
-  background: var(--accent-weak);
-}
-
-@media (hover: hover) {
-  .result__link:hover .result__title {
-    text-decoration: underline;
-  }
+  background: var(--surface-2);
 }
 
 .result__chevron {
@@ -943,17 +778,38 @@ button:disabled {
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
-  font-size: 22px;
 }
 
-/* ---- Property screen -------------------------------------------------------- */
+/* ---- Properties table ---- */
+
+.properties-table .property-row {
+  cursor: pointer;
+}
+
+.history-subrow {
+  padding: 4px 0;
+  max-width: 1100px;
+}
+
+.history__summary {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.history--timeline .history__summary {
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* ---- Property screen ---- */
 
 /* On a phone the property screen is full screen: its own bar replaces the nav. */
 .app--detail .appnav {
   display: none;
 }
 
-@media (min-width: 720px) {
+@media (min-width: 768px) {
   .app--detail .appnav {
     display: block;
   }
@@ -965,47 +821,39 @@ button:disabled {
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 52px;
-  padding: env(safe-area-inset-top) 8px 0;
-  background: var(--surface);
+  gap: 4px;
+  min-height: var(--nav-h);
+  padding: env(safe-area-inset-top) 4px 0;
+  background: #fafaf7d9;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
 }
 
-@media (min-width: 720px) {
-  /* Below the sticky app nav, which is 52px tall. */
+@media (min-width: 768px) {
+  /* Below the sticky app nav. */
   .detail-bar {
-    top: 52px;
-    padding: 0 max(20px, calc((100% - 1160px) / 2));
+    top: var(--nav-h);
+    padding: 0 max(12px, calc((100% - 1176px) / 2));
   }
 }
 
-.detail-bar__back,
-.detail-bar__action {
+.detail-bar__btn.ant-btn {
   flex: none;
-  min-height: 44px;
-  border: none;
-  background: transparent;
-  color: var(--accent);
+  color: var(--text);
   font-weight: 600;
-  font-size: 15px;
-  padding: 0 8px;
 }
 
-.detail-bar__back span {
-  font-size: 24px;
-  line-height: 1;
-  vertical-align: -2px;
-}
-
-.detail-bar__title {
+.detail-bar__title.ant-typography {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
   text-align: center;
+}
+
+/* Keeps the title centred when there's no Share button. */
+.detail-bar__spacer {
+  flex: none;
+  width: 88px;
 }
 
 .property-page__body {
@@ -1041,366 +889,31 @@ button:disabled {
   }
 }
 
-.property-hero {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  padding: 18px 16px;
+.property-stat.ant-card {
+  height: 100%;
+  background: var(--surface-2);
 }
 
-.property-hero__title {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-}
-
-.property-hero__title--none {
-  color: var(--muted);
-  font-style: italic;
-  font-weight: 500;
-}
-
-.property-hero__place {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 15px;
-}
-
-.chips {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 14px 0 0;
-  padding: 0;
-}
-
-.chip {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 13px;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.stat {
-  background: var(--bg);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-}
-
-.stat__label {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.stat__value {
-  margin-top: 4px;
+.property-stat .ant-statistic-content {
   font-size: 20px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
-.stat__value--none {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--muted);
-}
+/* ---- Timeline ---- */
 
-.stat__sub {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.button-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.property-hero__map {
-  width: 100%;
-  margin-top: 14px;
-}
-
-.section-heading {
-  margin: 0;
-  font-size: 17px;
-}
-
-/* ---- Timeline --------------------------------------------------------------- */
-
-.history__summary,
-.history__status {
-  color: var(--muted);
-  font-size: 13px;
-  margin: 6px 0 12px;
-}
-
-.history__status--error {
-  color: var(--danger);
-}
-
-.history__status--empty strong,
-.history__summary strong {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* A rail down the left with a dot per event, coloured by kind. */
-.timeline__item {
-  position: relative;
-  padding: 0 0 12px 22px;
-}
-
-.timeline__item::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-}
-
-.timeline__item:last-child::before {
-  bottom: auto;
-  height: 18px;
-}
-
-.timeline__item::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 14px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--bg);
-  background: var(--accent);
-}
-
-.timeline__item--epc::after {
-  background: #2e9d5b;
-}
-
-.timeline__card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px 12px;
-}
-
-.timeline__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.timeline__headline {
-  margin-top: 6px;
+.property-timeline .timeline-headline {
   font-size: 20px;
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.timeline__rating {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.timeline__rating .epc-band {
+.property-timeline .timeline-headline--rating .epc-band {
   font-size: 15px;
   min-width: 28px;
   padding: 2px 6px;
 }
 
-.timeline__arrow {
-  color: var(--muted);
-  font-weight: 400;
-}
+/* ---- EPC bands: the official green-to-red scale (antd has none) ---- */
 
-.timeline__score {
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.timeline__change {
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.timeline__change--up {
-  color: #2e9d5b;
-}
-
-.timeline__change--down {
-  color: var(--danger);
-}
-
-.timeline__change--flat {
-  color: var(--muted);
-}
-
-.timeline__details {
-  margin-top: 4px;
-  font-size: 14px;
-}
-
-.timeline__note {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-left: 3px solid #c98a12;
-  background: color-mix(in srgb, #c98a12 10%, transparent);
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.timeline__note strong {
-  color: #c98a12;
-  font-weight: 600;
-}
-
-.timeline__ref {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-/* ---- Provenance ------------------------------------------------------------- */
-
-.provenance {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.provenance summary {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.provenance__list {
-  margin: 0;
-  padding: 0 16px 12px;
-}
-
-.provenance__item {
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-}
-
-.provenance__item dt {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.provenance__item dd {
-  margin: 2px 0 0;
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- Skeletons -------------------------------------------------------------- */
-
-.skeleton {
-  background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
-  background-size: 200% 100%;
-  animation: skeleton 1.2s ease-in-out infinite;
-  border-radius: var(--radius);
-}
-
-.skeleton--hero {
-  min-height: 220px;
-  border: none;
-}
-
-.skeleton--card {
-  height: 92px;
-  margin: 0 0 12px 22px;
-}
-
-.skeleton--line {
-  height: 22px;
-  margin-top: 6px;
-  width: 70%;
-}
-
-@keyframes skeleton {
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
-}
-
-/* ---- Badges and EPC bands ---------------------------------------------------- */
-
-.kind-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.kind-badge--sale {
-  background: var(--accent-weak);
-  color: var(--accent);
-}
-
-.kind-badge--epc {
-  background: color-mix(in srgb, #2e9d5b 16%, transparent);
-  color: #2e9d5b;
-}
-
-/* EPC bands, the familiar green-to-red scale. White text on every band. */
 .epc-band {
   display: inline-block;
   min-width: 20px;
@@ -1409,6 +922,7 @@ button:disabled {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.5;
   text-align: center;
 }
 

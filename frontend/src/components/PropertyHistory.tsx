@@ -1,18 +1,25 @@
 // One property's history: every Land Registry sale and EPC certificate,
 // newest first. Nothing is capped or truncated. Two layouts of the same data:
 //
-//   "table"    - desktop. Compact rows (date, kind, price / rating, details,
-//                link / reference), shown inline under an expanded property.
-//   "timeline" - mobile. One card per event on a vertical rail, shown on the
+//   "table"    - desktop. A compact antd Table (date, kind, price / rating,
+//                details, link / reference), shown inline under an expanded
+//                property.
+//   "timeline" - mobile. An antd Timeline with one Card per event, shown on the
 //                full-screen property screen. A sale card leads with the price
 //                and the change since the previous sale; an EPC card with the
 //                current -> potential rating. Trust in a sale's link to this
 //                UPRN is spelled out in words on fuzzy matches (no tooltips:
 //                they never show on touch screens).
 
+import { Alert, Button, Card, Flex, Skeleton, Table, Tag, Timeline, Tooltip, Typography } from "antd";
+import type { ColumnsType } from "antd/es/table";
+
+import { BRAND } from "../AntdTheme";
 import type { EpcEvent, HistoryEvent, SaleEvent } from "../api/properties";
 import { ApiError } from "../api/client";
 import { usePropertyHistory } from "../hooks/usePropertyHistory";
+
+const { Text } = Typography;
 
 export const priceFmt = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -35,6 +42,25 @@ const LR_PROPERTY_TYPE: Record<string, string> = {
   O: "Other",
 };
 const LR_DURATION: Record<string, string> = { F: "Freehold", L: "Leasehold" };
+
+// One colour per kind, shared by the chips and the timeline dots: neutral ink
+// for sales (blue is reserved for brand and action), TPMguild's "verified"
+// green for certificates.
+const KIND_COLOR = { sale: BRAND.ink2, epc: BRAND.verified } as const;
+const KIND_WASH = { sale: BRAND.paper3, epc: BRAND.verifiedWash } as const;
+
+/** A TPMguild-style chip: pale wash of the kind's colour, coloured text, pill. */
+function KindTag({ kind, label }: { kind: HistoryEvent["kind"]; label: string }) {
+  return (
+    <Tag
+      bordered={false}
+      className="kind-chip"
+      style={{ background: KIND_WASH[kind], color: KIND_COLOR[kind] }}
+    >
+      {label}
+    </Tag>
+  );
+}
 
 export function formatDate(iso: string | null) {
   if (!iso) return "Undated";
@@ -82,6 +108,7 @@ function eventKey(e: HistoryEvent) {
   return e.kind === "sale" ? `sale-${e.transaction_id}` : `epc-${e.certificate_number}`;
 }
 
+/** An EPC band in the official green-to-red colours (custom: antd has no such scale). */
 export function Rating({ band, size }: { band: string | null; size?: "lg" }) {
   const cls = `epc-band${size ? ` epc-band--${size}` : ""}`;
   if (!band) return <span className={`${cls} epc-band--none`}>?</span>;
@@ -89,85 +116,107 @@ export function Rating({ band, size }: { band: string | null; size?: "lg" }) {
   return <span className={`${cls} epc-band--${b.toLowerCase()}`}>{b}</span>;
 }
 
-// ---- Desktop: table rows ----------------------------------------------------
-
-function SaleCells({ e }: { e: SaleEvent }) {
-  const fuzzy = e.match_type !== "EXACT";
+function RatingChange({ e }: { e: EpcEvent }) {
   return (
-    <>
-      <td className="num history__headline">
-        {e.price != null ? priceFmt.format(e.price) : "—"}
-      </td>
-      <td className="history__details">
-        <div>{saleDetails(e) || "—"}</div>
-        <div className="history__address">{saleAddress(e)}</div>
-      </td>
-      <td>
-        <span
-          className={`match-badge${fuzzy ? " match-badge--fuzzy" : ""}`}
+    <Flex align="center" gap={4} component="span">
+      <Rating band={e.current_energy_rating} />
+      <Text type="secondary" aria-label="could reach">
+        →
+      </Text>
+      <Rating band={e.potential_energy_rating} />
+    </Flex>
+  );
+}
+
+// ---- Desktop: table ---------------------------------------------------------
+
+const TABLE_COLUMNS: ColumnsType<HistoryEvent> = [
+  {
+    title: "Date",
+    key: "date",
+    width: 120,
+    render: (_, e) => <span className="nowrap">{formatDate(e.date)}</span>,
+  },
+  {
+    title: "Event",
+    key: "kind",
+    width: 80,
+    render: (_, e) => <KindTag kind={e.kind} label={e.kind === "sale" ? "Sale" : "EPC"} />,
+  },
+  {
+    title: "Price / rating",
+    key: "headline",
+    align: "right",
+    width: 140,
+    render: (_, e) =>
+      e.kind === "sale" ? (
+        <Text strong className="nowrap">
+          {e.price != null ? priceFmt.format(e.price) : "—"}
+        </Text>
+      ) : (
+        <Flex vertical align="flex-end">
+          <RatingChange e={e} />
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {e.current_energy_efficiency ?? "?"} → {e.potential_energy_efficiency ?? "?"}
+          </Text>
+        </Flex>
+      ),
+  },
+  {
+    title: "Details",
+    key: "details",
+    render: (_, e) => (
+      <>
+        <div>{(e.kind === "sale" ? saleDetails(e) : epcDetails(e)) || "—"}</div>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {e.kind === "sale" ? saleAddress(e) : epcAddress(e)}
+        </Text>
+      </>
+    ),
+  },
+  {
+    title: "Link / reference",
+    key: "ref",
+    width: 170,
+    render: (_, e) => {
+      if (e.kind === "epc") {
+        return (
+          <Tooltip title="Certificate number">
+            <Text type="secondary" className="nowrap mono" style={{ fontSize: 12 }}>
+              {e.certificate_number}
+            </Text>
+          </Tooltip>
+        );
+      }
+      const fuzzy = e.match_type !== "EXACT";
+      return (
+        <Tooltip
           title={`Linked to this UPRN by ${e.match_type.toLowerCase()} match (score ${e.match_score.toFixed(2)})`}
         >
-          {fuzzy ? `${e.match_type.toLowerCase()} ${e.match_score.toFixed(2)}` : "exact"}
-        </span>
-      </td>
-    </>
-  );
-}
-
-function EpcCells({ e }: { e: EpcEvent }) {
-  return (
-    <>
-      <td className="num history__headline">
-        <span className="history__rating">
-          <Rating band={e.current_energy_rating} />
-          <span className="history__arrow">→</span>
-          <Rating band={e.potential_energy_rating} />
-        </span>
-        <div className="history__score">
-          {e.current_energy_efficiency ?? "?"} → {e.potential_energy_efficiency ?? "?"}
-        </div>
-      </td>
-      <td className="history__details">
-        <div>{epcDetails(e) || "—"}</div>
-        <div className="history__address">{epcAddress(e)}</div>
-      </td>
-      <td className="history__ref" title="Certificate number">
-        {e.certificate_number}
-      </td>
-    </>
-  );
-}
+          <Tag color={fuzzy ? "warning" : undefined} bordered>
+            {fuzzy ? `${e.match_type.toLowerCase()} ${e.match_score.toFixed(2)}` : "exact"}
+          </Tag>
+        </Tooltip>
+      );
+    },
+  },
+];
 
 function HistoryTable({ events }: { events: HistoryEvent[] }) {
   return (
-    <table className="history__table">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Event</th>
-          <th className="num">Price / rating</th>
-          <th>Details</th>
-          <th>Link / reference</th>
-        </tr>
-      </thead>
-      <tbody>
-        {events.map((e) => (
-          <tr key={eventKey(e)} className={`history__row history__row--${e.kind}`}>
-            <td className="history__date">{formatDate(e.date)}</td>
-            <td>
-              <span className={`kind-badge kind-badge--${e.kind}`}>
-                {e.kind === "sale" ? "Sale" : "EPC"}
-              </span>
-            </td>
-            {e.kind === "sale" ? <SaleCells e={e} /> : <EpcCells e={e} />}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <Table<HistoryEvent>
+      size="small"
+      bordered
+      columns={TABLE_COLUMNS}
+      dataSource={events}
+      rowKey={eventKey}
+      pagination={false}
+      scroll={{ x: "max-content" }}
+    />
   );
 }
 
-// ---- Mobile: timeline cards -------------------------------------------------
+// ---- Mobile: timeline -------------------------------------------------------
 
 /** "+£42,000 (+18%) since 2014", or null when either price is missing. */
 function priceChange(e: SaleEvent, prev: SaleEvent | undefined) {
@@ -177,7 +226,7 @@ function priceChange(e: SaleEvent, prev: SaleEvent | undefined) {
   const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
   const since = prev.date ? ` since ${prev.date.slice(0, 4)}` : "";
   return {
-    dir: diff > 0 ? "up" : diff < 0 ? "down" : "flat",
+    type: diff > 0 ? ("success" as const) : diff < 0 ? ("danger" as const) : ("secondary" as const),
     text: `${sign}${priceFmt.format(Math.abs(diff))} (${sign}${Math.abs(pct)}%)${since}`,
   };
 }
@@ -185,47 +234,47 @@ function priceChange(e: SaleEvent, prev: SaleEvent | undefined) {
 function SaleBody({ e, prev }: { e: SaleEvent; prev: SaleEvent | undefined }) {
   const details = saleDetails(e);
   const change = priceChange(e, prev);
-  const exact = e.match_type === "EXACT";
   return (
-    <>
-      <div className="timeline__headline">
+    <Flex vertical gap={2}>
+      <Text strong className="timeline-headline">
         {e.price != null ? priceFmt.format(e.price) : "Price not recorded"}
-      </div>
+      </Text>
       {change && (
-        <div className={`timeline__change timeline__change--${change.dir}`}>{change.text}</div>
+        <Text type={change.type} strong style={{ fontSize: 13 }}>
+          {change.text}
+        </Text>
       )}
-      {details && <div className="timeline__details">{details}</div>}
-      {!exact && (
+      {details && <Text>{details}</Text>}
+      {e.match_type !== "EXACT" && (
         // A non-exact link is a judgement call: show the address the sale was
         // recorded under, so it can be checked against this property.
-        <div className="timeline__note">
-          <strong>
-            Approximate match ({e.match_type.toLowerCase()}, score {e.match_score.toFixed(2)})
-          </strong>
-          <span>Recorded as: {saleAddress(e) || "no address"}</span>
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 6 }}
+          message={`Approximate match (${e.match_type.toLowerCase()}, score ${e.match_score.toFixed(2)})`}
+          description={`Recorded as: ${saleAddress(e) || "no address"}`}
+        />
       )}
-    </>
+    </Flex>
   );
 }
 
 function EpcBody({ e }: { e: EpcEvent }) {
   const details = epcDetails(e);
   return (
-    <>
-      <div className="timeline__headline timeline__rating">
-        <Rating band={e.current_energy_rating} />
-        <span className="timeline__arrow" aria-label="could reach">
-          →
-        </span>
-        <Rating band={e.potential_energy_rating} />
-        <span className="timeline__score">
+    <Flex vertical gap={2}>
+      <Flex align="center" gap={8} className="timeline-headline timeline-headline--rating">
+        <RatingChange e={e} />
+        <Text type="secondary" style={{ fontSize: 13 }}>
           {e.current_energy_efficiency ?? "?"} → {e.potential_energy_efficiency ?? "?"}
-        </span>
-      </div>
-      {details && <div className="timeline__details">{details}</div>}
-      <div className="timeline__ref">Certificate {e.certificate_number}</div>
-    </>
+        </Text>
+      </Flex>
+      {details && <Text>{details}</Text>}
+      <Text type="secondary" className="mono" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+        Certificate {e.certificate_number}
+      </Text>
+    </Flex>
   );
 }
 
@@ -235,25 +284,28 @@ function HistoryTimeline({ events }: { events: HistoryEvent[] }) {
   const previousSale = new Map(sales.map((s, i) => [s.transaction_id, sales[i + 1]]));
 
   return (
-    <ol className="timeline">
-      {events.map((e) => (
-        <li key={eventKey(e)} className={`timeline__item timeline__item--${e.kind}`}>
-          <div className="timeline__card">
-            <div className="timeline__meta">
-              <span className={`kind-badge kind-badge--${e.kind}`}>
-                {e.kind === "sale" ? "Sold" : "EPC"}
-              </span>
-              <time dateTime={e.date ?? undefined}>{formatDate(e.date)}</time>
-            </div>
+    <Timeline
+      className="property-timeline"
+      items={events.map((e) => ({
+        key: eventKey(e),
+        color: KIND_COLOR[e.kind],
+        children: (
+          <Card size="small">
+            <Flex align="center" gap={8} style={{ marginBottom: 4 }}>
+              <KindTag kind={e.kind} label={e.kind === "sale" ? "Sold" : "EPC"} />
+              <Text type="secondary">
+                <time dateTime={e.date ?? undefined}>{formatDate(e.date)}</time>
+              </Text>
+            </Flex>
             {e.kind === "sale" ? (
               <SaleBody e={e} prev={previousSale.get(e.transaction_id)} />
             ) : (
               <EpcBody e={e} />
             )}
-          </div>
-        </li>
-      ))}
-    </ol>
+          </Card>
+        ),
+      }))}
+    />
   );
 }
 
@@ -282,14 +334,10 @@ export function PropertyHistory({ uprn, variant }: { uprn: number; variant: Hist
   const cls = `history history--${variant}`;
 
   if (history.isPending) {
-    return variant === "timeline" ? (
+    return (
       <div className={cls} aria-busy="true">
-        <p className="history__status">Loading history…</p>
-        <div className="skeleton skeleton--card" />
-        <div className="skeleton skeleton--card" />
+        <Skeleton active title={false} paragraph={{ rows: variant === "timeline" ? 6 : 3 }} />
       </div>
-    ) : (
-      <div className={`${cls} history__status`}>Loading history…</div>
     );
   }
 
@@ -298,11 +346,17 @@ export function PropertyHistory({ uprn, variant }: { uprn: number; variant: Hist
     // "no data": that would claim a property was never sold when the gateway
     // simply didn't answer.
     return (
-      <div className={`${cls} history__status history__status--error`} role="alert">
-        {errorMessage(history.error)}{" "}
-        <button type="button" className="link-button" onClick={() => history.refetch()}>
-          Retry
-        </button>
+      <div className={cls}>
+        <Alert
+          type="error"
+          showIcon
+          message={errorMessage(history.error)}
+          action={
+            <Button size="small" onClick={() => history.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -311,28 +365,30 @@ export function PropertyHistory({ uprn, variant }: { uprn: number; variant: Hist
 
   if (events.length === 0) {
     return (
-      <div className={`${cls} history__status history__status--empty`}>
-        <strong>No sales or EPC data available for this property.</strong> It may not
-        have been sold since Land Registry records began in 1995, or a sale may exist
-        that hasn't been matched to this UPRN. No EPC certificate was found for it
-        either.
+      <div className={cls}>
+        <Alert
+          type="info"
+          showIcon
+          message="No sales or EPC data available for this property."
+          description="It may not have been sold since Land Registry records began in 1995, or a sale may exist that hasn't been matched to this UPRN. No EPC certificate was found for it either."
+        />
       </div>
     );
   }
 
   return (
     <div className={cls}>
-      <p className="history__summary">
-        {sale_count > 0 ? plural(sale_count, "sale", "sales") : <strong>No recorded sales</strong>}
+      <Text type="secondary" className="history__summary">
+        {sale_count > 0 ? plural(sale_count, "sale", "sales") : <Text strong>No recorded sales</Text>}
         {" · "}
         {epc_count > 0 ? (
           plural(epc_count, "EPC certificate", "EPC certificates")
         ) : (
-          <strong>No EPC data available</strong>
+          <Text strong>No EPC data available</Text>
         )}
         {sale_count === 0 &&
           " · possibly not sold since 1995, or a sale hasn't been matched to this UPRN"}
-      </p>
+      </Text>
       {variant === "timeline" ? (
         <HistoryTimeline events={events} />
       ) : (

@@ -1,6 +1,6 @@
 // The properties screen: a search box on top, and below it either the search
 // results (while a query is submitted) or the full `properties` table (one row
-// per UPRN), 50 rows a page.
+// per UPRN), 50 rows a page. Built from Ant Design components.
 //
 // Table paging is keyset: `cursors` is the list of cursors visited so far
 // (null = first page) and the current page uses the last one. Next pushes the
@@ -12,6 +12,8 @@
 // The submitted search lives in the URL (?q=...&more=1), so Back from a
 // property screen returns to the same results, and a search can be shared.
 
+import { ArrowLeftOutlined } from "@ant-design/icons";
+import { Alert, Button, Skeleton, Typography } from "antd";
 import { type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -27,6 +29,12 @@ import {
   SEARCH_PAGE_SIZE,
   usePropertySearch,
 } from "../hooks/usePropertySearch";
+
+const { Text, Title } = Typography;
+
+function describe(err: unknown) {
+  return err instanceof ApiError ? `${err.message} (HTTP ${err.status})` : String(err);
+}
 
 export function PropertiesDashboard() {
   const [params, setParams] = useSearchParams();
@@ -47,17 +55,18 @@ export function PropertiesDashboard() {
 
   return (
     <div className="dashboard">
-      <header className="dashboard__header">
-        <div>
-          <h1>Properties</h1>
-          <p className="dashboard__subtitle">
-            One row per UPRN: OS coordinates plus the address from the latest EPC
-            certificate
-          </p>
-        </div>
-      </header>
-
-      <PropertySearchBar value={searchQuery} onSearch={runSearch} busy={search.isFetching} />
+      {/* Search is the hero: the brand-blue Search button is the first thing
+          you see, and on phones the bar stays under the nav as you scroll. */}
+      <section className="search-hero" aria-labelledby="search-hero-title">
+        <div className="eyebrow">Properties</div>
+        <Title level={2} id="search-hero-title" className="search-hero__title">
+          Find a property
+        </Title>
+        <Text type="secondary" className="search-hero__sub">
+          Every UPRN with its OS location, latest EPC address, sales and energy history
+        </Text>
+        <PropertySearchBar value={searchQuery} onSearch={runSearch} busy={search.isFetching} />
+      </section>
 
       {searching ? (
         <SearchSection
@@ -85,14 +94,14 @@ function SearchSection({
   onClear: () => void;
 }) {
   const back = (
-    <button type="button" className="link-button" onClick={onClear}>
-      ← Back to all properties
-    </button>
+    <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClear} className="results__back">
+      Back to all properties
+    </Button>
   );
 
   return (
     <>
-      <div className="results__back">{back}</div>
+      {back}
       <SearchBody search={search} canShowMore={canShowMore} onShowMore={onShowMore} back={back} />
     </>
   );
@@ -116,23 +125,31 @@ function SearchBody({
     if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
       return (
         <div className="results">
-          <p className="results__tip results__tip--warn">{err.message}</p>
+          <Alert type="warning" showIcon message={err.message} />
         </div>
       );
     }
     return (
-      <div className="banner banner--error" role="alert">
-        <strong>Search failed.</strong>{" "}
-        {err instanceof ApiError ? `${err.message} (HTTP ${err.status})` : String(err)}
-        <button type="button" onClick={() => search.refetch()}>
-          Retry
-        </button>
-      </div>
+      <Alert
+        type="error"
+        showIcon
+        message="Search failed."
+        description={describe(err)}
+        action={
+          <Button size="small" danger onClick={() => search.refetch()}>
+            Retry
+          </Button>
+        }
+      />
     );
   }
 
   if (!search.data) {
-    return <div className="results results__summary">Searching…</div>;
+    return (
+      <div className="results">
+        <Skeleton active paragraph={{ rows: 4 }} />
+      </div>
+    );
   }
 
   return (
@@ -172,22 +189,27 @@ function AllProperties() {
 
   return (
     <>
-      <p className="results__summary">All properties · ordered by UPRN</p>
+      <Text className="results__summary eyebrow">
+        All properties · ordered by UPRN
+      </Text>
 
       {properties.isError && (
-        <div className="banner banner--error" role="alert">
-          <strong>Couldn’t load properties.</strong>{" "}
-          {properties.error instanceof ApiError
-            ? `${properties.error.message} (HTTP ${properties.error.status})`
-            : String(properties.error)}
-          <button type="button" onClick={() => properties.refetch()}>
-            Retry
-          </button>
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Couldn’t load properties."
+          description={describe(properties.error)}
+          action={
+            <Button size="small" danger onClick={() => properties.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       )}
 
       {properties.isLoading && !data ? (
-        <div className="banner">Loading properties…</div>
+        <Skeleton active paragraph={{ rows: 8 }} />
       ) : (
         data && (
           <>
