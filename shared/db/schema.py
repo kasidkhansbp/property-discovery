@@ -13,6 +13,7 @@ from typing import NamedTuple
 
 from .models.epc_domestic_certificates import EpcDomesticCertificates
 from .models.land_registry_sales import LandRegistrySales
+from .models.mart_epc_uprn_coverage import mart_epc_uprn_coverage
 from .models.mart_uprn_coverage_metrics import mart_uprn_coverage_metrics
 from .models.properties import Properties
 from .models.property_uprn_mapping import property_uprn_mapping
@@ -23,6 +24,13 @@ MART_TABLE: str = mart_uprn_coverage_metrics.name
 MART_COLUMNS: list[str] = [c.name for c in mart_uprn_coverage_metrics.columns]
 MART_GROUP_COLUMNS: list[str] = [
     c.name for c in mart_uprn_coverage_metrics.columns if c.info.get("group")
+]
+
+# --- mart_epc_uprn_coverage (EPC UPRN -> transaction coverage by type) --- #
+EPC_COVERAGE_TABLE: str = mart_epc_uprn_coverage.name
+EPC_COVERAGE_COLUMNS: list[str] = [c.name for c in mart_epc_uprn_coverage.columns]
+EPC_COVERAGE_GROUP_COLUMNS: list[str] = [
+    c.name for c in mart_epc_uprn_coverage.columns if c.info.get("group")
 ]
 
 # --- per-table <source>_quality companions --- #
