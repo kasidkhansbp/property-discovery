@@ -68,3 +68,24 @@ mart_coverage_metrics_schedule = dg.ScheduleDefinition(
     cron_schedule="0 8 24 * *",
     default_status=dg.DefaultScheduleStatus.STOPPED,  # flip to RUNNING when ready
 )
+
+
+# EPC UPRN coverage mart: same shape as the coverage-metrics job above — a
+# standalone rebuild of mart_epc_uprn_coverage, so it can be re-run on its own.
+mart_epc_uprn_coverage_job = dg.define_asset_job(
+    name="mart_epc_uprn_coverage_job",
+    selection=dg.AssetSelection.assets(assets.mart_epc_uprn_coverage),
+)
+
+# Its inputs refresh on two cadences: EPC certificates load on the 5th, the
+# bridge on the 24th. Run after the bridge (an hour after the other mart, so the
+# two Postgres aggregations don't compete), which also picks up that month's
+# EPC load. Widen the gap if the monthly reconciliation runs long.
+#   ┌ minute  ┌ hour  ┌ day-of-month  ┌ month  ┌ day-of-week
+#   0         9       24              *        *
+mart_epc_uprn_coverage_schedule = dg.ScheduleDefinition(
+    name="mart_epc_uprn_coverage_monthly",
+    job=mart_epc_uprn_coverage_job,
+    cron_schedule="0 9 24 * *",
+    default_status=dg.DefaultScheduleStatus.STOPPED,  # flip to RUNNING when ready
+)

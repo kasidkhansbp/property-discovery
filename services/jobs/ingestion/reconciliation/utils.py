@@ -45,6 +45,12 @@ from .resources import PostgresResource, R2Resource
 from .schema import (
     COVERAGE_METRICS_SELECT,
     ENRICHMENT_COLUMN_TYPES,
+    EPC_CERTS_TABLE,
+    EPC_CERTS_WITHOUT_UPRN_SELECT,
+    EPC_COVERAGE_COLUMNS,
+    EPC_COVERAGE_MART_TABLE,
+    EPC_COVERAGE_PG_DDL_COLS,
+    EPC_COVERAGE_SELECT,
     LR_SALES_TABLE,
     MART_COLUMNS,
     MART_PG_DDL_COLS,
@@ -270,9 +276,14 @@ def build_master_parquet(
                 f"SELECT DISTINCT transaction_id FROM pg.{TARGET_TABLE} "
                 "WHERE transaction_id IS NOT NULL;"
             )
+            # Only UPRNs that already carry a SALE count as covered. The
+            # UNMATCHED_UPRN rows must not: the load replaces that whole
+            # category with this run's set, so counting them here would drop
+            # every still-unsold UPRN from the table.
             con.execute(
                 "CREATE TABLE existing_uprn AS "
-                f"SELECT DISTINCT uprn FROM pg.{TARGET_TABLE} WHERE uprn IS NOT NULL;"
+                f"SELECT DISTINCT uprn FROM pg.{TARGET_TABLE} "
+                "WHERE uprn IS NOT NULL AND transaction_id IS NOT NULL;"
             )
             con.execute("DETACH pg;")
             con.execute(
@@ -705,5 +716,95 @@ def build_coverage_metrics(
             "total_land_registry_sales": total_sales,
             "matched_uprn_count": total_matched,
             "overall_coverage_percentage": overall,
+        }
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Mart: EPC UPRN -> transaction coverage by property type                     #
+# (mart_epc_uprn_coverage).                                                   #
+# --------------------------------------------------------------------------- #
+def build_epc_uprn_coverage(
+    context: AssetExecutionContext, postgres: PostgresResource
+) -> None:
+    """Rebuild ``mart_epc_uprn_coverage`` from EPC + the bridge.
+
+    Every UPRN on an EPC certificate is described by its latest certificate and
+    flagged as with/without a linked sale, then grouped by property type (plus
+    the secondary drill-down dimensions — see EPC_COVERAGE_SELECT). Runs entirely
+    in Postgres, and uses the same load-and-swap as build_coverage_metrics: the
+    live mart keeps serving the previous month until the rename commits.
+
+    The run metadata carries the headline per property type, so the Dagster UI
+    shows the month's coverage at a glance without querying the mart.
+    """
+    new_table = f"{EPC_COVERAGE_MART_TABLE}_new"
+    cols = ", ".join(EPC_COVERAGE_COLUMNS)
+
+    with postgres.connect() as conn, conn.cursor() as cur:
+        context.log.info(
+            "Building %s from %s joined to %s",
+            EPC_COVERAGE_MART_TABLE,
+            EPC_CERTS_TABLE,
+            TARGET_TABLE,
+        )
+        cur.execute(f"DROP TABLE IF EXISTS {new_table};")
+        cur.execute(f"CREATE TABLE {new_table} (\n    {EPC_COVERAGE_PG_DDL_COLS}\n);")
+        cur.execute(f"INSERT INTO {new_table} ({cols})\n{EPC_COVERAGE_SELECT};")
+        group_rows = cur.rowcount
+
+        # Atomic swap: readers see the old mart until this transaction commits.
+        cur.execute(f"DROP TABLE IF EXISTS {EPC_COVERAGE_MART_TABLE};")
+        cur.execute(f"ALTER TABLE {new_table} RENAME TO {EPC_COVERAGE_MART_TABLE};")
+        # The dashboard always filters / groups on property_type first.
+        cur.execute(
+            f"CREATE INDEX {EPC_COVERAGE_MART_TABLE}_type_idx "
+            f"ON {EPC_COVERAGE_MART_TABLE} (property_type);"
+        )
+
+        # Headline per property type, for the run's metadata.
+        cur.execute(
+            f"SELECT property_type, sum(epc_uprns), sum(uprns_with_transaction) "
+            f"FROM {EPC_COVERAGE_MART_TABLE} GROUP BY 1 ORDER BY 2 DESC;"
+        )
+        # SUM() over bigint comes back as Decimal; coerce for JSON-friendly metadata.
+        by_type = [(t, int(n), int(w)) for t, n, w in cur.fetchall()]
+
+        cur.execute(EPC_CERTS_WITHOUT_UPRN_SELECT)
+        certs_without_uprn = int(cur.fetchone()[0])
+        conn.commit()
+
+    def pct(with_txn: int, total: int) -> float:
+        return round(with_txn * 100.0 / total, 2) if total else 0.0
+
+    total_uprns = sum(n for _, n, _ in by_type)
+    total_with = sum(w for _, _, w in by_type)
+    context.log.info(
+        "Built %s: %s group(s), %s EPC UPRN(s), %s with a transaction (%.2f%%)",
+        EPC_COVERAGE_MART_TABLE,
+        group_rows,
+        total_uprns,
+        total_with,
+        pct(total_with, total_uprns),
+    )
+    context.add_output_metadata(
+        {
+            "mart_table": EPC_COVERAGE_MART_TABLE,
+            "coverage_groups": group_rows,
+            "epc_uprns": total_uprns,
+            "uprns_with_transaction": total_with,
+            "uprns_without_transaction": total_uprns - total_with,
+            "overall_coverage_percentage": pct(total_with, total_uprns),
+            "certificates_without_uprn": certs_without_uprn,
+            # e.g. {"Flat": {"epc_uprns": ..., "with_transaction": ..., ...}}
+            "coverage_by_property_type": {
+                t: {
+                    "epc_uprns": n,
+                    "with_transaction": w,
+                    "without_transaction": n - w,
+                    "coverage_percentage": pct(w, n),
+                }
+                for t, n, w in by_type
+            },
         }
     )

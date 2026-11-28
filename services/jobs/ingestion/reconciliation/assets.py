@@ -25,6 +25,7 @@ from dagster import AssetExecutionContext
 from .resources import PostgresResource, R2Resource
 from .utils import (
     build_coverage_metrics,
+    build_epc_uprn_coverage,
     build_master_parquet,
     load_master,
     normalize_sources,
@@ -142,3 +143,27 @@ def mart_uprn_coverage_metrics(
 ) -> None:
     """Pre-aggregate coverage stats from the bridge into the serving mart."""
     build_coverage_metrics(context, postgres)
+
+
+# --------------------------------------------------------------------------- #
+# Downstream mart: EPC UPRN -> transaction coverage by property type.         #
+# --------------------------------------------------------------------------- #
+# The UPRN-side companion to mart_uprn_coverage_metrics: of the UPRNs on EPC
+# certificates, how many have at least one sale linked in the bridge, split by
+# property type. Like that mart it has its own job/schedule
+# (mart_epc_uprn_coverage_job); the deps are lineage only — it re-reads the
+# whole current bridge and EPC table each run. The EPC dependency records that a
+# new month of certificates also changes this mart.
+@dg.asset(
+    name="mart_epc_uprn_coverage",
+    group_name="reconciliation",
+    deps=[
+        dg.AssetKey("reconciliation_full_loaded_to_postgres"),
+        dg.AssetKey("reconciliation_incremental_loaded_to_postgres"),
+    ],
+)
+def mart_epc_uprn_coverage(
+    context: AssetExecutionContext, postgres: PostgresResource
+) -> None:
+    """Pre-aggregate EPC UPRN -> transaction coverage by property type."""
+    build_epc_uprn_coverage(context, postgres)

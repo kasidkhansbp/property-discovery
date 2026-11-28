@@ -40,16 +40,20 @@ defs = dg.Definitions(
         # downstream mart — pre-aggregated coverage metrics, rebuilt after
         # either load chain
         assets.mart_uprn_coverage_metrics,
+        # downstream mart — EPC UPRN -> transaction coverage by property type
+        assets.mart_epc_uprn_coverage,
     ],
     jobs=[
         schedules.reconciliation_full_job,
         schedules.reconciliation_monthly_job,
         # standalone mart build — rebuilds mart_uprn_coverage_metrics on its own
         schedules.mart_coverage_metrics_job,
+        schedules.mart_epc_uprn_coverage_job,
     ],
     schedules=[
         schedules.reconciliation_monthly_schedule,
         schedules.mart_coverage_metrics_schedule,
+        schedules.mart_epc_uprn_coverage_schedule,
     ],
     resources={
         "r2": R2Resource(

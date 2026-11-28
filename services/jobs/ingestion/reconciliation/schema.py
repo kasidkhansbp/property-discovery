@@ -196,3 +196,121 @@ FROM {LR_SALES_TABLE} lr
 LEFT JOIN {TARGET_TABLE} m ON m.transaction_id = lr.transaction_id
 GROUP BY 1, 2, 3, 4
 """.strip()
+
+
+# --------------------------------------------------------------------------- #
+# Downstream mart: EPC UPRN -> transaction coverage, by property type.        #
+# --------------------------------------------------------------------------- #
+# The opposite direction to mart_uprn_coverage_metrics. That mart asks "of the
+# Land Registry sales, how many found a UPRN?"; this one asks "of the UPRNs EPC
+# knows about, how many have at least one sale linked in the bridge?" — and its
+# headline split is the property type (House / Flat / Maisonette / Bungalow /
+# Park home).
+#
+# Each EPC UPRN is described by its LATEST certificate (lodgement_date, then
+# certificate_number as the tie-break — the same rule build_properties.sql
+# uses), so a UPRN is counted exactly once, under one property type. A UPRN
+# counts as "with transaction" when the bridge holds any row for it with a
+# non-NULL transaction_id (EXACT or FUZZY); UNMATCHED_UPRN rows, and UPRNs the
+# bridge hasn't seen at all, count as "without".
+#
+# It reads epc_domestic_certificates directly rather than the `properties`
+# table, because `properties` has no monthly refresh yet — reading it would
+# freeze the attribute side of the mart at whenever it was last rebuilt.
+#
+# Secondary dimensions (built form, tenure, how the UPRN got onto the cert,
+# country, postcode prefix) are kept so the dashboard can drill into a type —
+# e.g. unsold flats that are owner-occupied, or whose UPRN was address-matched
+# rather than entered by the assessor. NULL / blank attribute values are folded
+# into 'Unknown' so every row is filterable, and tenure is lower-cased because
+# EPC records it in two casings ('rented (social)' vs 'Rented (social)') — which
+# also merges a blank tenure into EPC's own 'unknown' value.
+EPC_COVERAGE_MART_TABLE = "mart_epc_uprn_coverage"
+
+# Owned by the epc service; one row per certificate.
+EPC_CERTS_TABLE = "epc_domestic_certificates"
+
+EPC_COVERAGE_COLUMN_TYPES: dict[str, str] = {
+    "property_type": "text",  # House / Flat / Maisonette / Bungalow / Park home
+    "built_form": "text",  # Detached / Semi-Detached / Mid-Terrace / ...
+    "tenure": "text",  # owner-occupied / rented (social) / rented (private) / ...
+    "uprn_source": "text",  # 'Energy Assessor' or 'Address Matched'
+    "constituent_country": "text",  # EPC country: England / Wales
+    "postcode_prefix": "text",  # outward code, e.g. 'EX4' / 'CF36'
+    "epc_uprns": "bigint",  # distinct EPC UPRNs in the group
+    "uprns_with_transaction": "bigint",  # of those, linked to >= 1 sale
+    "uprns_without_transaction": "bigint",  # epc_uprns - uprns_with_transaction
+    "coverage_percentage": "numeric",  # with / total * 100, rounded 2 dp
+    "built_at": "timestamptz",  # when this snapshot was built (same on every row)
+}
+EPC_COVERAGE_COLUMNS: list[str] = list(EPC_COVERAGE_COLUMN_TYPES)
+EPC_COVERAGE_GROUP_COLUMNS: list[str] = [
+    "property_type",
+    "built_form",
+    "tenure",
+    "uprn_source",
+    "constituent_country",
+    "postcode_prefix",
+]
+
+EPC_COVERAGE_PG_DDL_COLS: str = ",\n    ".join(
+    f"{name:<26} {ddl}" for name, ddl in EPC_COVERAGE_COLUMN_TYPES.items()
+)
+
+# The value NULL / blank attributes are folded into.
+EPC_COVERAGE_UNKNOWN = "Unknown"
+
+
+def _unknown_if_blank_sql(expr: str) -> str:
+    return f"coalesce(nullif(trim({expr}), ''), '{EPC_COVERAGE_UNKNOWN}')"
+
+
+# The single SELECT that builds the mart. Written in the SQL subset DuckDB and
+# Postgres share (DISTINCT ON, NULLS LAST, regexp_replace ... 'g') so the tests
+# can run it unchanged on DuckDB.
+#
+#   * epc_latest — one row per UPRN: its latest certificate's attributes.
+#   * sold       — distinct UPRNs the bridge links to at least one sale. DISTINCT
+#                  matters: a UPRN sold five times has five bridge rows, and the
+#                  LEFT JOIN must not fan it out.
+#
+# count(*) per group is always >= 1, so the ratio never divides by zero. GROUP BY
+# is positional (1..6) to avoid repeating the derived expressions. built_at is the
+# same now() on every row (one transaction), so the dashboard can show the date
+# of the snapshot it is reading — Postgres records no table-creation time.
+EPC_COVERAGE_SELECT: str = f"""
+WITH epc_latest AS (
+    SELECT DISTINCT ON (uprn)
+           uprn, property_type, built_form, tenure, uprn_source, country, postcode
+    FROM {EPC_CERTS_TABLE}
+    WHERE uprn IS NOT NULL AND trim(uprn) <> ''
+    ORDER BY uprn, lodgement_date DESC NULLS LAST, certificate_number DESC
+),
+sold AS (
+    SELECT DISTINCT uprn
+    FROM {TARGET_TABLE}
+    WHERE transaction_id IS NOT NULL AND uprn IS NOT NULL
+)
+SELECT
+    {_unknown_if_blank_sql("e.property_type")}  AS property_type,
+    {_unknown_if_blank_sql("e.built_form")}     AS built_form,
+    lower({_unknown_if_blank_sql("e.tenure")})  AS tenure,
+    {_unknown_if_blank_sql("e.uprn_source")}    AS uprn_source,
+    {_unknown_if_blank_sql("e.country")}        AS constituent_country,
+    {postcode_prefix_sql("e.postcode")}         AS postcode_prefix,
+    count(*)                                    AS epc_uprns,
+    count(s.uprn)                               AS uprns_with_transaction,
+    count(*) - count(s.uprn)                    AS uprns_without_transaction,
+    round(count(s.uprn) * 100.0 / count(*), 2)  AS coverage_percentage,
+    now()                                       AS built_at
+FROM epc_latest e
+LEFT JOIN sold s ON s.uprn = e.uprn
+GROUP BY 1, 2, 3, 4, 5, 6
+""".strip()
+
+# Certificates that carry no UPRN at all can't be counted per UPRN, so they are
+# reported once, as run metadata, rather than as mart rows.
+EPC_CERTS_WITHOUT_UPRN_SELECT: str = (
+    f"SELECT count(*) FROM {EPC_CERTS_TABLE} "
+    "WHERE uprn IS NULL OR trim(uprn) = ''"
+)
