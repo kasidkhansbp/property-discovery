@@ -31,14 +31,22 @@ from typing import Any
 from shared.db.schema import MART_COLUMNS, MART_GROUP_COLUMNS, MART_TABLE
 
 # The dimensions a caller may filter on — exactly the mart's grouping columns
-# (the address components), which are the only non-metric columns. Re-exported
-# as the single list the router, the response models, and the tests all read.
+# (property type + the address components). Re-exported as the single list the
+# router, the response models, and the tests all read.
 FILTER_COLUMNS: list[str] = list(MART_GROUP_COLUMNS)
 
-# Columns a caller may sort by: any mart column. Default is the most useful
+# Any dimension can be the summary's grouping; property type is the headline.
+GROUP_BY_COLUMNS: list[str] = list(MART_GROUP_COLUMNS)
+DEFAULT_GROUP_BY: str = "property_type"
+
+# Rows are returned without built_at (it is identical on every row and served
+# once, by the summary).
+ROW_COLUMNS: list[str] = [c for c in MART_COLUMNS if c != "built_at"]
+
+# Columns a caller may sort by: any returned column. Default is the most useful
 # dashboard ordering — worst-covered areas first — with a stable tiebreak so
 # pagination is deterministic across pages.
-SORTABLE_COLUMNS: frozenset[str] = frozenset(MART_COLUMNS)
+SORTABLE_COLUMNS: frozenset[str] = frozenset(ROW_COLUMNS)
 DEFAULT_SORT_BY: str = "coverage_percentage"
 DEFAULT_SORT_DIR: str = "asc"
 _TIEBREAK_COLUMNS: tuple[str, ...] = (
@@ -46,6 +54,7 @@ _TIEBREAK_COLUMNS: tuple[str, ...] = (
     "county",
     "district",
     "postcode_prefix",
+    "property_type",
 )
 
 MAX_LIMIT: int = 1000
@@ -86,7 +95,7 @@ def build_coverage_query(
 ) -> tuple[str, list[Any]]:
     """SQL + params for a filtered, sorted, paginated page of the mart.
 
-    Returns every mart column (the four dimensions plus the three metrics) for
+    Returns every row column (the five dimensions plus the three metrics) for
     the rows matching ``filters``, ordered by ``sort_by``/``sort_dir`` with a
     fixed tiebreak, limited to one page. Raises ``ValueError`` on an unknown
     filter column, an unsortable ``sort_by``, or an out-of-range page.
@@ -110,7 +119,7 @@ def build_coverage_query(
     order_by = ", ".join([f"{sort_by} {direction}", *tiebreak])
 
     sql = (
-        f"SELECT {', '.join(MART_COLUMNS)}\n"
+        f"SELECT {', '.join(ROW_COLUMNS)}\n"
         f"FROM {MART_TABLE}\n"
         f"{where}\n"
         f"ORDER BY {order_by}\n"
@@ -153,3 +162,39 @@ def build_filter_options_query(
         f"ORDER BY {column}"
     ).strip()
     return sql, params
+
+
+def build_summary_query(
+    filters: dict[str, list[str]], *, group_by: str = DEFAULT_GROUP_BY
+) -> tuple[str, list[Any]]:
+    """SQL + params summing the mart by one dimension under ``filters``.
+
+    One row per value of ``group_by`` (most sales first), each with its sale
+    totals. Coverage is recomputed from the sums by the caller — never averaged
+    from the per-row percentages, which would weight a 3-sale area like a
+    3,000-sale one. Sums are cast to bigint because Postgres widens SUM(bigint)
+    to numeric.
+    """
+    if group_by not in GROUP_BY_COLUMNS:
+        raise ValueError(f"not a groupable column: {group_by!r}")
+    where, params = _where(filters)
+    sql = "\n".join(
+        part
+        for part in (
+            "SELECT",
+            f"    {group_by} AS value,",
+            "    sum(total_land_registry_sales)::bigint AS total_land_registry_sales,",
+            "    sum(matched_uprn_count)::bigint        AS matched_uprn_count",
+            f"FROM {MART_TABLE}",
+            where,
+            "GROUP BY 1",
+            "ORDER BY 2 DESC, 1",
+        )
+        if part
+    )
+    return sql, params
+
+
+def build_built_at_query() -> tuple[str, list[Any]]:
+    """SQL for the snapshot's build time (NULL while the mart is empty)."""
+    return f"SELECT max(built_at) FROM {MART_TABLE}", []

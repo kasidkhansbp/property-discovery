@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 
 
 class CoverageRow(BaseModel):
-    """One pre-aggregated coverage bucket: an area and its match rate."""
+    """One pre-aggregated coverage bucket: a property type in an area, and its match rate."""
 
+    property_type: str | None = Field(None, examples=["Flat/Maisonette"])
     constituent_country: str | None = Field(None, examples=["England"])
     county: str | None = Field(None, examples=["DEVON"])
     district: str | None = Field(None, examples=["EXETER"])
@@ -38,16 +39,41 @@ class CoveragePage(BaseModel):
 
 
 class FilterOptions(BaseModel):
-    """Distinct values available for each address-component filter.
+    """Distinct values available for each filter (property type + address).
 
     Lists cascade: each reflects the *other* filters currently applied, so the
     UI can narrow districts once a county is chosen, etc.
     """
 
+    property_type: list[str]
     constituent_country: list[str]
     county: list[str]
     district: list[str]
     postcode_prefix: list[str]
+
+
+class CoverageSummaryRow(BaseModel):
+    """Sale totals for one value of the summary's grouping column."""
+
+    value: str | None = Field(examples=["Flat/Maisonette"])
+    total_land_registry_sales: int = Field(examples=[5012345])
+    matched_uprn_count: int = Field(examples=[4210000])
+    unmatched_count: int = Field(examples=[802345])
+    coverage_percentage: float | None = Field(
+        None, description="matched / total * 100, from the sums (NULL if total is 0)",
+        examples=[83.99],
+    )
+
+
+class CoverageSummary(BaseModel):
+    """Headline Sales -> UPRN coverage, grouped by one dimension, under the filters."""
+
+    group_by: str = Field(examples=["property_type"])
+    built_at: datetime | None = Field(
+        None, description="When the mart snapshot was built (NULL if never built)"
+    )
+    total: CoverageSummaryRow = Field(description="All groups combined (value is NULL)")
+    items: list[CoverageSummaryRow]
 
 
 # --------------------------------------------------------------------------- #
