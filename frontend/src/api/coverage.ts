@@ -5,9 +5,11 @@
 
 import { apiGet } from "./client";
 
-// The four address-component dimensions that can be filtered on — exactly the
-// mart's grouping columns (query.py:FILTER_COLUMNS / MART_GROUP_COLUMNS).
+// The five dimensions that can be filtered on — property type plus the four
+// address components, exactly the mart's grouping columns
+// (query.py:FILTER_COLUMNS / MART_GROUP_COLUMNS).
 export const FILTER_COLUMNS = [
+  "property_type",
   "constituent_country",
   "county",
   "district",
@@ -19,7 +21,7 @@ export type FilterColumn = (typeof FILTER_COLUMNS)[number];
 export type Filters = Partial<Record<FilterColumn, string[]>>;
 
 // Any mart column is sortable (query.py:SORTABLE_COLUMNS = MART_COLUMNS):
-// the four dimensions plus the three coverage metrics.
+// the five dimensions plus the three coverage metrics.
 export const SORTABLE_COLUMNS = [
   ...FILTER_COLUMNS,
   "total_land_registry_sales",
@@ -31,6 +33,7 @@ export type SortDir = "asc" | "desc";
 
 // Human labels for the columns, used in table headers and filter captions.
 export const COLUMN_LABELS: Record<SortColumn, string> = {
+  property_type: "Property type",
   constituent_country: "Country",
   county: "County",
   district: "District",
@@ -41,6 +44,7 @@ export const COLUMN_LABELS: Record<SortColumn, string> = {
 };
 
 export interface CoverageRow {
+  property_type: string | null;
   constituent_country: string | null;
   county: string | null;
   district: string | null;
@@ -58,6 +62,21 @@ export interface CoveragePage {
 }
 
 export type FilterOptions = Record<FilterColumn, string[]>;
+
+export interface CoverageSummaryRow {
+  value: string | null;
+  total_land_registry_sales: number;
+  matched_uprn_count: number;
+  unmatched_count: number;
+  coverage_percentage: number | null;
+}
+
+export interface CoverageSummary {
+  group_by: FilterColumn;
+  built_at: string | null;
+  total: CoverageSummaryRow;
+  items: CoverageSummaryRow[];
+}
 
 export interface CoverageQuery {
   filters: Filters;
@@ -87,6 +106,17 @@ export function fetchCoveragePage(
   params.set("limit", String(query.limit));
   params.set("offset", String(query.offset));
   return apiGet<CoveragePage>("/coverage-metrics", params, signal);
+}
+
+/** Sale totals grouped by one dimension (GET /coverage-metrics/summary). */
+export function fetchCoverageSummary(
+  filters: Filters,
+  groupBy: FilterColumn,
+  signal?: AbortSignal,
+): Promise<CoverageSummary> {
+  const params = filtersToParams(filters);
+  params.set("group_by", groupBy);
+  return apiGet<CoverageSummary>("/coverage-metrics/summary", params, signal);
 }
 
 /** Cascading dropdown values (GET /coverage-metrics/filter-options). */

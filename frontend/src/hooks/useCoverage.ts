@@ -16,8 +16,10 @@ import {
 
 import {
   fetchCoveragePage,
+  fetchCoverageSummary,
   fetchFilterOptions,
   type CoverageQuery,
+  type FilterColumn,
   type Filters,
   type SortColumn,
   type SortDir,
@@ -95,6 +97,16 @@ export function useCoveragePage({ filters, sortBy, sortDir, page }: UseCoverageP
   }, [client, total, page, sortBy, sortDir, JSON.stringify(filters)]);
 
   return query;
+}
+
+/** Headline sale totals grouped by one dimension (property type for the cards). */
+export function useCoverageSummary(filters: Filters, groupBy: FilterColumn) {
+  return useQuery({
+    queryKey: ["coverage-summary", filters, groupBy],
+    queryFn: ({ signal }) => fetchCoverageSummary(filters, groupBy, signal),
+    placeholderData: keepPreviousData,
+    staleTime: STALE_TIME_MS,
+  });
 }
 
 /** Cascading dropdown values for the current filter selection. */

@@ -1,8 +1,9 @@
 // The UPRN Coverage tab. Two views, switched at the top and kept in the URL
 // (?view=epc) so a link opens the right one:
 //
-//   * Sales → UPRN (default) — filters + sortable 100-row table + pagination over
-//     mart_uprn_coverage_metrics: of the Land Registry sales, how many found a UPRN.
+//   * Sales → UPRN (default) — headline cards by property type, then filters +
+//     sortable 100-row table + pagination over mart_uprn_coverage_metrics: of the
+//     Land Registry sales, how many found a UPRN.
 //   * EPC UPRN → sales — EpcCoverageView, over mart_epc_uprn_coverage: of the EPC
 //     UPRNs, how many have a sale, by property type.
 //
@@ -21,10 +22,14 @@ import {
 } from "../api/coverage";
 import { ApiError } from "../api/client";
 import { FilterBar } from "../components/FilterBar";
+import { CoverageCards } from "../components/CoverageCards";
 import { CoverageTable } from "../components/CoverageTable";
 import { Pagination } from "../components/Pagination";
-import { useCoveragePage, useFilterOptions, PREFETCH_AHEAD } from "../hooks/useCoverage";
+import { useCoveragePage, useCoverageSummary, useFilterOptions } from "../hooks/useCoverage";
 import { EpcCoverageView } from "./EpcCoverageView";
+
+const dateFmt = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" });
+const SALES_CARD_WORDING = { allLabel: "All LR sales", linkNoun: "a UPRN" };
 
 const VIEWS = [
   { id: "sales", label: "Sales → UPRN" },
@@ -71,6 +76,11 @@ function SalesCoverageView() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
 
+  // The cards always list every property type (so one can be added or removed
+  // by clicking), so their totals ignore the property-type filter itself but
+  // honour the others.
+  const { property_type: selectedTypes = [], ...otherFilters } = filters;
+  const summary = useCoverageSummary(otherFilters, "property_type");
   const options = useFilterOptions(filters);
   const coverage = useCoveragePage({ filters, sortBy, sortDir, page });
 
@@ -79,6 +89,18 @@ function SalesCoverageView() {
     setFilters(next);
     setPage(0);
   }
+
+  function toggleType(type: string) {
+    const nextTypes = selectedTypes.includes(type)
+      ? selectedTypes.filter((t) => t !== type)
+      : [...selectedTypes, type];
+    const next: Filters = { ...filters };
+    if (nextTypes.length) next.property_type = nextTypes;
+    else delete next.property_type;
+    changeFilters(next);
+  }
+
+  const builtAt = summary.data?.built_at;
 
   function changeSort(column: SortColumn) {
     if (column === sortBy) {
@@ -98,9 +120,40 @@ function SalesCoverageView() {
   return (
     <>
       <p className="dashboard__subtitle">
-        Land Registry → UPRN match rate per area · {PREFETCH_AHEAD} pages
-        prefetched ahead
+        Share of Land Registry sales (transaction IDs) that are matched to a
+        UPRN, by property type.
+        {builtAt && <> Data as of {dateFmt.format(new Date(builtAt))}.</>}
       </p>
+
+      {summary.isError && (
+        <div className="banner banner--error" role="alert">
+          <strong>Couldn’t load the summary.</strong>{" "}
+          {summary.error instanceof ApiError
+            ? `${summary.error.message} (HTTP ${summary.error.status})`
+            : String(summary.error)}
+          <button type="button" onClick={() => summary.refetch()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {summary.isLoading ? (
+        <div className="banner">Loading summary…</div>
+      ) : (
+        summary.data && (
+          <CoverageCards
+            items={summary.data.items.map((i) => ({
+              value: i.value,
+              total: i.total_land_registry_sales,
+              matched: i.matched_uprn_count,
+            }))}
+            selected={selectedTypes}
+            onToggle={toggleType}
+            wording={SALES_CARD_WORDING}
+            stale={summary.isPlaceholderData}
+          />
+        )
+      )}
 
       <FilterBar
         columns={FILTER_COLUMNS}

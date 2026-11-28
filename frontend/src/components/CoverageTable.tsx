@@ -57,7 +57,8 @@ export function CoverageTable({ rows, sortBy, sortDir, onSort, stale }: Coverage
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`${row.constituent_country}-${row.county}-${row.district}-${row.postcode_prefix}-${index}`}>
+            <tr key={`${row.property_type}-${row.constituent_country}-${row.county}-${row.district}-${row.postcode_prefix}-${index}`}>
+              <td>{dash(row.property_type)}</td>
               <td>{dash(row.constituent_country)}</td>
               <td>{dash(row.county)}</td>
               <td>{dash(row.district)}</td>
