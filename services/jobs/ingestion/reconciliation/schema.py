@@ -78,9 +78,9 @@ PG_DDL_COLS: str = (
 # --------------------------------------------------------------------------- #
 # A small, dashboard-facing rollup. The bridge is ~40M rows, so a dashboard that
 # recomputes coverage on every page load would re-scan it each time; this mart
-# pre-aggregates coverage down to one row per (constituent_country, county,
-# district, postcode_prefix) so the dashboard reads a tiny, already-grouped
-# table instead.
+# pre-aggregates coverage down to one row per (property_type,
+# constituent_country, county, district, postcode_prefix) so the dashboard reads
+# a small, already-grouped table instead.
 #
 # The geography is taken from ``land_registry_sales`` (keyed by transaction_id),
 # NOT from the bridge's enrichment columns. Those enrichment columns (postcode,
@@ -102,6 +102,7 @@ LR_SALES_TABLE = "land_registry_sales"
 # Postgres idiom for VARCHAR (matching this table's other string columns);
 # ``numeric`` holds the 2-dp coverage percentage exactly.
 MART_COLUMN_TYPES: dict[str, str] = {
+    "property_type": "text",  # LR code as a label: Detached / ... / Other
     "constituent_country": "text",
     "county": "text",
     "district": "text",
@@ -109,9 +110,11 @@ MART_COLUMN_TYPES: dict[str, str] = {
     "total_land_registry_sales": "bigint",  # transactions in the group
     "matched_uprn_count": "bigint",  # of those, how many carry a UPRN
     "coverage_percentage": "numeric",  # matched / total * 100, rounded 2 dp
+    "built_at": "timestamptz",  # when this snapshot was built (same on every row)
 }
 MART_COLUMNS: list[str] = list(MART_COLUMN_TYPES)
 MART_GROUP_COLUMNS: list[str] = [
+    "property_type",
     "constituent_country",
     "county",
     "district",
@@ -172,6 +175,30 @@ def constituent_country_sql(col: str = "postcode") -> str:
     )
 
 
+# Land Registry's one-letter property_type codes, as the labels the dashboard
+# shows. 'O' (Other) covers non-residential / unclassified sales (PPD category
+# B). A NULL or unexpected code lands in 'Unknown' so every row is filterable.
+LR_PROPERTY_TYPE_LABELS: dict[str, str] = {
+    "D": "Detached",
+    "S": "Semi-Detached",
+    "T": "Terraced",
+    "F": "Flat/Maisonette",
+    "O": "Other",
+}
+LR_PROPERTY_TYPE_UNKNOWN = "Unknown"
+
+
+def lr_property_type_sql(col: str = "property_type") -> str:
+    """SQL expression mapping an LR property_type code to its label."""
+    whens = " ".join(
+        f"WHEN '{code}' THEN '{label}'" for code, label in LR_PROPERTY_TYPE_LABELS.items()
+    )
+    return (
+        f"CASE upper(trim({col})) {whens} "
+        f"ELSE '{LR_PROPERTY_TYPE_UNKNOWN}' END"
+    )
+
+
 # The single SELECT that builds the mart. Geography comes from the sale itself
 # (land_registry_sales, one row per transaction_id), so every sale — matched or
 # not — lands in its real postcode prefix / district / county. The bridge is
@@ -182,19 +209,23 @@ def constituent_country_sql(col: str = "postcode") -> str:
 # bridge's partial unique index), so the join never fans a sale out; the bridge's
 # UNMATCHED_UPRN rows (transaction_id NULL) simply never join. count(*) over a
 # group is always >= 1, so the ratio never divides by zero. GROUP BY is
-# positional (1..4) to avoid repeating the derived expressions.
+# positional (1..5) to avoid repeating the derived expressions. property_type is
+# the dashboard's headline split; built_at is the same now() on every row (one
+# transaction) so the dashboard can show which snapshot it is reading.
 COVERAGE_METRICS_SELECT: str = f"""
 SELECT
+    {lr_property_type_sql("lr.property_type")} AS property_type,
     {constituent_country_sql("lr.postcode")} AS constituent_country,
     lr.county,
     lr.district,
     {postcode_prefix_sql("lr.postcode")} AS postcode_prefix,
     count(*)                                   AS total_land_registry_sales,
     count(m.uprn)                              AS matched_uprn_count,
-    round(count(m.uprn) * 100.0 / count(*), 2) AS coverage_percentage
+    round(count(m.uprn) * 100.0 / count(*), 2) AS coverage_percentage,
+    now()                                      AS built_at
 FROM {LR_SALES_TABLE} lr
 LEFT JOIN {TARGET_TABLE} m ON m.transaction_id = lr.transaction_id
-GROUP BY 1, 2, 3, 4
+GROUP BY 1, 2, 3, 4, 5
 """.strip()
 
 

@@ -655,8 +655,8 @@ def build_coverage_metrics(
     """Rebuild ``mart_uprn_coverage_metrics`` from the sales + the bridge.
 
     One GROUP BY over ``land_registry_sales`` LEFT-JOINed to the bridge collapses
-    every sale into one row per (constituent_country, county, district,
-    postcode_prefix), carrying the total Land Registry sales, the matched-UPRN
+    every sale into one row per (property_type, constituent_country, county,
+    district, postcode_prefix), carrying the total Land Registry sales, the matched-UPRN
     count, and the rounded coverage percentage. The grouping geography is taken
     from the sale itself (so unmatched sales keep their real postcode/area and
     coverage blends per area); the bridge supplies only the matched flag. The
@@ -686,6 +686,18 @@ def build_coverage_metrics(
         # Atomic swap: readers see the old mart until this transaction commits.
         cur.execute(f"DROP TABLE IF EXISTS {MART_TABLE};")
         cur.execute(f"ALTER TABLE {new_table} RENAME TO {MART_TABLE};")
+        # The dashboard's headline cards group / filter on property_type first.
+        cur.execute(f"CREATE INDEX {MART_TABLE}_type_idx ON {MART_TABLE} (property_type);")
+
+        # Headline per property type, for the run's metadata.
+        cur.execute(
+            f"SELECT property_type, sum(total_land_registry_sales), "
+            f"sum(matched_uprn_count) FROM {MART_TABLE} GROUP BY 1 ORDER BY 2 DESC;"
+        )
+        by_type = {
+            ptype: round(int(m) * 100.0 / int(n), 2) if n else 0.0
+            for ptype, n, m in cur.fetchall()
+        }
 
         # Headline totals for the run's metadata (and a quick sanity check).
         cur.execute(
@@ -716,6 +728,7 @@ def build_coverage_metrics(
             "total_land_registry_sales": total_sales,
             "matched_uprn_count": total_matched,
             "overall_coverage_percentage": overall,
+            "coverage_percentage_by_property_type": by_type,
         }
     )
 
