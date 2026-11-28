@@ -1,31 +1,33 @@
-// The four cascading address-component dropdowns. Options come from the gateway's
-// /filter-options endpoint and narrow as selections are made; changing any filter
-// is reported up so the dashboard can reset to page 0.
+// A row of cascading multi-select dropdowns, one per filter column. Options come
+// from the gateway's /filter-options endpoint for the view and narrow as
+// selections are made; changing any filter is reported up so the dashboard can
+// reset to page 0. Generic over the column set, so the sales -> UPRN view
+// (four address columns) and the EPC UPRN -> sales view (six attribute columns)
+// share it.
 
-import {
-  COLUMN_LABELS,
-  FILTER_COLUMNS,
-  type FilterColumn,
-  type Filters,
-  type FilterOptions,
-} from "../api/coverage";
 import { MultiSelect } from "./MultiSelect";
 
-interface FilterBarProps {
-  filters: Filters;
-  options?: FilterOptions;
+interface FilterBarProps<C extends string> {
+  columns: readonly C[];
+  labels: Record<C, string>;
+  filters: Partial<Record<C, string[]>>;
+  options?: Record<C, string[]>;
   optionsLoading: boolean;
-  onChange: (filters: Filters) => void;
+  onChange: (filters: Partial<Record<C, string[]>>) => void;
 }
 
-export function FilterBar({ filters, options, optionsLoading, onChange }: FilterBarProps) {
-  const activeCount = FILTER_COLUMNS.reduce(
-    (sum, col) => sum + (filters[col]?.length ?? 0),
-    0,
-  );
+export function FilterBar<C extends string>({
+  columns,
+  labels,
+  filters,
+  options,
+  optionsLoading,
+  onChange,
+}: FilterBarProps<C>) {
+  const activeCount = columns.reduce((sum, col) => sum + (filters[col]?.length ?? 0), 0);
 
-  function setColumn(column: FilterColumn, values: string[]) {
-    const next: Filters = { ...filters };
+  function setColumn(column: C, values: string[]) {
+    const next = { ...filters };
     if (values.length === 0) delete next[column];
     else next[column] = values;
     onChange(next);
@@ -34,10 +36,10 @@ export function FilterBar({ filters, options, optionsLoading, onChange }: Filter
   return (
     <div className="filterbar">
       <div className="filterbar__fields">
-        {FILTER_COLUMNS.map((column) => (
+        {columns.map((column) => (
           <MultiSelect
             key={column}
-            label={COLUMN_LABELS[column]}
+            label={labels[column]}
             options={options?.[column] ?? []}
             selected={filters[column] ?? []}
             onChange={(values) => setColumn(column, values)}

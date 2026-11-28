@@ -75,7 +75,7 @@ export function CoverageTable({ rows, sortBy, sortDir, onSort, stale }: Coverage
   );
 }
 
-function CoverageCell({ pct }: { pct: number }) {
+export function CoverageCell({ pct }: { pct: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
   // Red (low) → green (high); hue 0..120 scaled by coverage.
   const hue = Math.round((clamped / 100) * 120);

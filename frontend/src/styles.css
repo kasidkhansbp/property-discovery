@@ -982,3 +982,62 @@ button:disabled {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---- UPRN Coverage: view switch + EPC coverage cards ---------------------- */
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.segmented__item {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 7px 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.segmented__item + .segmented__item {
+  border-left: 1px solid var(--border-strong);
+}
+
+.segmented__item--active {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.epc-card {
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+button.epc-card:hover {
+  border-color: var(--border-strong);
+}
+
+.epc-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow);
+}
+
+.epc-card--total {
+  background: var(--surface-2);
+}
+
+.epc-card__bar {
+  margin: 8px 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.coverage-table__empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px 12px;
+}
