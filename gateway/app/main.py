@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import close_pool, open_pool
-from .routers import coverage, properties, quality
+from .routers import coverage, epc_coverage, properties, quality
 
 
 @asynccontextmanager
@@ -36,7 +36,8 @@ app = FastAPI(
     description=(
         "Read-only access to the serving database. `/coverage-metrics` exposes "
         "mart_uprn_coverage_metrics (UPRN match coverage pre-aggregated per "
-        "address component). `/quality` exposes the per-table data-quality "
+        "address component). `/epc-uprn-coverage` exposes mart_epc_uprn_coverage "
+        "(how many EPC UPRNs are linked to a sale, by property type). `/quality` exposes the per-table data-quality "
         "companions: per-column coverage (how populated each column is) for "
         "land_registry_sales, epc_domestic_certificates, os_open_uprn and "
         "property_uprn_mapping, plus `/quality/duplication` for key-duplication "
@@ -58,6 +59,7 @@ app.add_middleware(
 )
 
 app.include_router(coverage.router)
+app.include_router(epc_coverage.router)
 app.include_router(quality.router)
 app.include_router(properties.router)
 

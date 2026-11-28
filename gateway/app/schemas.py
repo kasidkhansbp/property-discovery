@@ -264,3 +264,70 @@ class PropertyHistory(BaseModel):
     sale_count: int
     epc_count: int
     events: list[HistoryEvent]
+
+
+# --------------------------------------------------------------------------- #
+# EPC UPRN -> transaction coverage API (mart_epc_uprn_coverage).              #
+# --------------------------------------------------------------------------- #
+class EpcCoverageRow(BaseModel):
+    """One mart group: EPC UPRNs with these attributes, and how many have a sale."""
+
+    property_type: str = Field(examples=["Flat"])
+    built_form: str = Field(examples=["Mid-Terrace"])
+    tenure: str = Field(examples=["owner-occupied"])
+    uprn_source: str = Field(examples=["Address Matched"])
+    constituent_country: str = Field(examples=["England"])
+    postcode_prefix: str | None = Field(
+        None, description="NULL when the certificate's postcode is unusable",
+        examples=["EX4"],
+    )
+    epc_uprns: int = Field(examples=[110])
+    uprns_with_transaction: int = Field(examples=[10])
+    uprns_without_transaction: int = Field(examples=[100])
+    coverage_percentage: float = Field(examples=[9.09])
+
+
+class EpcCoveragePage(BaseModel):
+    """A filtered page of mart rows plus the unpaged row count."""
+
+    total: int = Field(description="Mart rows matching the filters (ignores paging)")
+    limit: int
+    offset: int
+    items: list[EpcCoverageRow]
+
+
+class EpcCoverageSummaryRow(BaseModel):
+    """Totals for one value of the summary's grouping column."""
+
+    value: str | None = Field(examples=["Flat"])
+    epc_uprns: int = Field(examples=[5252827])
+    uprns_with_transaction: int = Field(examples=[2145314])
+    uprns_without_transaction: int = Field(examples=[3107513])
+    coverage_percentage: float | None = Field(
+        None, description="with / total * 100, from the sums (NULL if total is 0)",
+        examples=[40.84],
+    )
+
+
+class EpcCoverageSummary(BaseModel):
+    """Headline coverage, grouped by one dimension, under the applied filters."""
+
+    group_by: str = Field(examples=["property_type"])
+    built_at: datetime | None = Field(
+        None, description="When the mart snapshot was built (NULL if never built)"
+    )
+    total: EpcCoverageSummaryRow = Field(
+        description="All groups combined (value is NULL)"
+    )
+    items: list[EpcCoverageSummaryRow]
+
+
+class EpcCoverageFilterOptions(BaseModel):
+    """Distinct values for each filter, cascading on the other applied filters."""
+
+    property_type: list[str]
+    built_form: list[str]
+    tenure: list[str]
+    uprn_source: list[str]
+    constituent_country: list[str]
+    postcode_prefix: list[str]
