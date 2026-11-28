@@ -23,11 +23,19 @@ the native function is the faster, dependency-free equivalent the brief's "e.g."
 left open.)
 
 Match design:
-  * Keys are normalised to a single ``addr_key`` per side — Land Registry's
-    PAON + Street concatenated, EPC's address1 — both whitespace-collapsed and
-    upper-cased, alongside a whitespace-stripped, upper-cased ``norm_postcode``.
+  * Keys are normalised to an ``addr_key`` per side — Land Registry's
+    SAON + PAON + Street concatenated; EPC's address1, address1+2 and
+    address1+2+3 (one candidate row per distinct variant, because EPC splits a
+    flat's address across its lines inconsistently) — upper-cased, punctuation
+    turned to spaces, whitespace collapsed, alongside a whitespace-stripped,
+    upper-cased ``norm_postcode``. The SAON (flat number / name) must be in the
+    key: without it every flat in a building shares one key, so flats either
+    fail to match or collapse onto one UPRN.
   * EXACT  = equal (norm_postcode, addr_key). FUZZY = best Jaro-Winkler over
-    candidates sharing a postcode, kept only above ``DEFAULT_FUZZY_THRESHOLD``.
+    candidates sharing a postcode AND the same house/flat numbers
+    (``addr_nums``), kept only above ``DEFAULT_FUZZY_THRESHOLD``. The number
+    guard matters: Jaro-Winkler scores "42 SISTOVA ROAD" vs "24 SISTOVA ROAD"
+    at ~0.98, so similarity alone pairs sales with the house next door.
   * Cardinality is enforced by keeping a single best UPRN per transaction_id
     (a UPRN may still recur across many transactions).
 """
@@ -145,8 +153,64 @@ def _attach_pg(con: duckdb.DuckDBPyConnection, postgres: PostgresResource) -> No
 # --------------------------------------------------------------------------- #
 # Postcode: drop ALL whitespace, upper-case ("SW1A 1AA" -> "SW1A1AA").
 _NORM_POSTCODE = "upper(regexp_replace(coalesce({col}, ''), '\\s', '', 'g'))"
-# Text key: upper-case, collapse internal whitespace runs to one space, trim.
-_NORM_TEXT = "trim(regexp_replace(upper(coalesce({expr}, '')), '\\s+', ' ', 'g'))"
+# Text key: upper-case, punctuation -> space ("111, BRIGHTON RD." and
+# "111 BRIGHTON RD" agree), collapse internal whitespace runs to one space, trim.
+_NORM_TEXT = (
+    "trim(regexp_replace(regexp_replace(upper(coalesce({expr}, '')), "
+    "'[^A-Z0-9 ]', ' ', 'g'), '\\s+', ' ', 'g'))"
+)
+# House/flat identifiers in a normalised key: every token containing a digit
+# ("12", "12A", "B18") or that is a single letter (the "A" of "FLAT A"), IN
+# ORDER and space-joined, so "FLAT 3 12 HIGH STREET" -> "3 12". Order matters:
+# "FLAT 2 1 GROSVENOR PLACE" and "FLAT 1 2 GROSVENOR PLACE" are different flats.
+# Empty string when the key has none.
+_ADDR_NUMS = (
+    "array_to_string(list_filter(string_split({key}, ' '), "
+    "t -> regexp_matches(t, '[0-9]') OR regexp_matches(t, '^[A-Z]$')), ' ')"
+)
+
+
+def lr_normalized_select(source: str) -> str:
+    """SELECT producing (transaction_id, norm_postcode, addr_key) from LR rows.
+
+    ``source`` is the table to read (``pg.land_registry_sales`` in the pipeline).
+    The key is SAON + PAON + Street, so "FLAT 3" / "12" / "HIGH STREET" becomes
+    ``FLAT 3 12 HIGH STREET``; a sale with no SAON keeps the PAON + Street key.
+    """
+    return f"""
+        SELECT
+            transaction_id,
+            {_NORM_POSTCODE.format(col="postcode")} AS norm_postcode,
+            {_NORM_TEXT.format(expr="concat_ws(' ', saon, paon, street)")} AS addr_key
+        FROM {source}
+    """
+
+
+def epc_normalized_select(source: str) -> str:
+    """SELECT producing (uprn, norm_postcode, addr_key) candidate rows from EPC.
+
+    EPC does not split the flat from the building consistently: the same flat
+    appears as address1 "Flat 3, 12 High Street", or address1 "Flat 3" +
+    address2 "12 High Street", or address1 "Flat 2" + address2 "Clare Lodge" +
+    address3 "111 Brighton Road". So each certificate yields one row per
+    DISTINCT key among address1, address1+2 and address1+2+3, and a sale
+    matches if it equals any of them. Rows with no UPRN are dropped — they can
+    neither be matched to nor stand in as an unmatched UPRN.
+    """
+    k1 = _NORM_TEXT.format(expr="address1")
+    k2 = _NORM_TEXT.format(expr="concat_ws(' ', address1, address2)")
+    k3 = _NORM_TEXT.format(expr="concat_ws(' ', address1, address2, address3)")
+    return f"""
+        SELECT uprn, norm_postcode, addr_key
+        FROM (
+            SELECT
+                uprn,
+                {_NORM_POSTCODE.format(col="postcode")} AS norm_postcode,
+                unnest(list_distinct([{k1}, {k2}, {k3}])) AS addr_key
+            FROM {source}
+            WHERE uprn IS NOT NULL AND trim(uprn) <> ''
+        )
+    """
 
 
 def normalize_sources(
@@ -159,43 +223,21 @@ def normalize_sources(
     """Standardise the join keys on both datasets; write two Parquet files to R2.
 
     Land Registry contributes ``transaction_id`` plus a normalised postcode and
-    an ``addr_key`` built from PAON + Street. EPC contributes ``uprn`` plus a
-    normalised postcode and an ``addr_key`` built from address1 (EPC does not
-    split house number from street, so address1 is the comparable line). Rows
-    with no UPRN are dropped from the EPC side — they can neither be matched to
-    nor stand in as an unmatched UPRN.
+    an ``addr_key`` built from SAON + PAON + Street (``lr_normalized_select``).
+    EPC contributes ``uprn`` plus a normalised postcode and one ``addr_key`` row
+    per address-line variant (``epc_normalized_select``).
     """
-    lr_postcode = _NORM_POSTCODE.format(col="postcode")
-    lr_addr = _NORM_TEXT.format(expr="concat_ws(' ', paon, street)")
-    epc_postcode = _NORM_POSTCODE.format(col="postcode")
-    epc_addr = _NORM_TEXT.format(expr="address1")
-
     with duckdb_con(r2) as con:
         _attach_pg(con, postgres)
         context.log.info("Normalising %s -> %s", LR_TABLE, r2.s3_url(lr_key))
         con.execute(
-            f"""
-            COPY (
-                SELECT
-                    transaction_id,
-                    {lr_postcode} AS norm_postcode,
-                    {lr_addr}     AS addr_key
-                FROM pg.{LR_TABLE}
-            ) TO '{r2.s3_url(lr_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);
-            """
+            f"COPY ({lr_normalized_select(f'pg.{LR_TABLE}')}) "
+            f"TO '{r2.s3_url(lr_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);"
         )
         context.log.info("Normalising %s -> %s", EPC_TABLE, r2.s3_url(epc_key))
         con.execute(
-            f"""
-            COPY (
-                SELECT
-                    uprn,
-                    {epc_postcode} AS norm_postcode,
-                    {epc_addr}     AS addr_key
-                FROM pg.{EPC_TABLE}
-                WHERE uprn IS NOT NULL AND trim(uprn) <> ''
-            ) TO '{r2.s3_url(epc_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);
-            """
+            f"COPY ({epc_normalized_select(f'pg.{EPC_TABLE}')}) "
+            f"TO '{r2.s3_url(epc_key)}' (FORMAT PARQUET, COMPRESSION ZSTD);"
         )
         # Cheap row counts (Parquet footers) to report how much landed.
         n_lr = con.execute(
@@ -223,6 +265,128 @@ def normalize_sources(
 # name. Used in SQL below; no Python UDF needed.
 _SIM = "jaro_winkler_similarity"
 
+# Distinct EPC address candidates, from the normalised ``epc`` table, with the
+# house/flat numbers of each key pre-computed for the fuzzy pass's guard.
+EPC_ADDR_SQL = f"""
+    CREATE TABLE epc_addr AS
+    SELECT DISTINCT uprn, norm_postcode, addr_key,
+           {_ADDR_NUMS.format(key="addr_key")} AS addr_nums
+    FROM epc
+    WHERE norm_postcode <> '' AND addr_key <> '';
+"""
+
+
+def match_addresses(
+    con: duckdb.DuckDBPyConnection,
+    context: AssetExecutionContext | None,
+    threshold: float = DEFAULT_FUZZY_THRESHOLD,
+) -> None:
+    """Steps B + C: build ``exact_matches`` and ``fuzzy_matches`` in ``con``.
+
+    Reads ``lr`` (transaction_id, norm_postcode, addr_key) and ``epc_addr``
+    (``EPC_ADDR_SQL``). Both outputs hold (transaction_id, uprn, match_score,
+    match_type), one row per matched transaction, and are disjoint.
+    """
+
+    def log(msg: str, *args: object) -> None:
+        if context is not None:
+            context.log.info(msg, *args)
+
+    # Step B: EXACT. row_number keeps one UPRN per transaction (1:1).
+    log("Step B: exact pass (deterministic key join)...")
+    con.execute(
+        f"""
+        CREATE TABLE exact_matches AS
+        SELECT transaction_id, uprn, 1.0 AS match_score, '{MATCH_EXACT}' AS match_type
+        FROM (
+            SELECT lr.transaction_id, e.uprn,
+                   row_number() OVER (
+                       PARTITION BY lr.transaction_id ORDER BY e.uprn
+                   ) AS rn
+            FROM lr
+            JOIN epc_addr e
+              ON e.norm_postcode = lr.norm_postcode
+             AND e.addr_key = lr.addr_key
+            WHERE lr.norm_postcode <> '' AND lr.addr_key <> ''
+        )
+        WHERE rn = 1;
+        """
+    )
+    n_exact = con.execute("SELECT count(*) FROM exact_matches;").fetchone()[0]
+    log("Step B done: %s exact match(es). Step C: fuzzy fallback on the rest...", n_exact)
+
+    # Step C: FUZZY fallback over the exact-pass leftovers, blocked on
+    # postcode AND house/flat numbers. Three bounded statements rather than
+    # one, because the single-statement form (postcode join -> row_number() per
+    # transaction -> threshold filter) ranked EVERY raw postcode pair — hundreds
+    # of millions of rows for ~22M leftover sales x ~14 EPC addresses per
+    # postcode — inside one window operator and OOM'd at the 5 GB cap on the
+    # 2026-11-15 full run. The decomposition below is result-identical:
+    #
+    #  (i)  dedupe the leftovers to DISTINCT (postcode, addr_key). A key
+    #       either exact-matches for every sale of that address or for
+    #       none, and the fuzzy candidates/score depend only on the key, so
+    #       repeat sales of the same address are scored once, not per sale.
+    #  (ii) score the candidates that share the postcode AND the exact same
+    #       house/flat numbers (addr_nums), keeping only those AT OR ABOVE
+    #       threshold. The number guard is what stops "42 X ROAD" pairing with
+    #       "24 X ROAD" (Jaro-Winkler ~0.98) or FLAT 3 with FLAT 8; similarity
+    #       is left to absorb wording noise only (ST/STREET, building names).
+    #       Filtering before ranking bounds memory: the window below ranks only
+    #       the near-identical survivors, and this base table of the
+    #       file-backed database can be paged out.
+    #  (iii) best candidate per key (highest similarity, lowest uprn as the
+    #       stable tie-break), then fan back out to the transactions that
+    #       carry that key. The anti-join on exact_matches is redundant by
+    #       construction of (i) but keeps the 1:1 transaction_id guarantee
+    #       independent of that reasoning.
+    con.execute(
+        f"""
+        CREATE TABLE fuzzy_keys AS
+        SELECT norm_postcode, addr_key,
+               {_ADDR_NUMS.format(key="addr_key")} AS addr_nums
+        FROM (
+            SELECT DISTINCT u.norm_postcode, u.addr_key
+            FROM lr u
+            ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id
+            WHERE u.norm_postcode <> '' AND u.addr_key <> ''
+        );
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TABLE fuzzy_candidates AS
+        SELECT k.norm_postcode, k.addr_key, e.uprn,
+               {_SIM}(k.addr_key, e.addr_key) AS similarity
+        FROM fuzzy_keys k
+        JOIN epc_addr e
+          ON e.norm_postcode = k.norm_postcode
+         AND e.addr_nums = k.addr_nums
+        WHERE round({_SIM}(k.addr_key, e.addr_key), 4) >= {threshold};
+        """
+    )
+    con.execute(
+        f"""
+        CREATE TABLE fuzzy_matches AS
+        SELECT u.transaction_id,
+               b.uprn,
+               round(b.similarity, 4) AS match_score,
+               '{MATCH_FUZZY}' AS match_type
+        FROM (
+            SELECT norm_postcode, addr_key, uprn, similarity
+            FROM fuzzy_candidates
+            QUALIFY row_number() OVER (
+                PARTITION BY norm_postcode, addr_key
+                ORDER BY similarity DESC, uprn
+            ) = 1
+        ) b
+        JOIN lr u
+          ON u.norm_postcode = b.norm_postcode
+         AND u.addr_key = b.addr_key
+        ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id;
+        """
+    )
+
 
 def build_master_parquet(
     context: AssetExecutionContext,
@@ -240,9 +404,9 @@ def build_master_parquet(
     Stages, all within one DuckDB connection:
       * EXACT  — inner join on (norm_postcode, addr_key); one best UPRN per
         transaction (lowest UPRN as a stable tie-break), score 1.0.
-      * FUZZY  — for transactions the exact pass missed, block on postcode, score
-        every candidate with Jaro-Winkler, keep the single best per transaction
-        above ``threshold``.
+      * FUZZY  — for transactions the exact pass missed, block on postcode and
+        house/flat numbers, score every candidate with Jaro-Winkler, keep the
+        single best per transaction above ``threshold``.
       * COVERAGE — add an UNMATCHED_LR row (uprn NULL, 0.0) for every remaining
         transaction, and an UNMATCHED_UPRN row (transaction_id NULL, 0.0) for
         every EPC UPRN that no transaction matched.
@@ -260,11 +424,7 @@ def build_master_parquet(
         con.execute(
             f"CREATE TABLE epc AS SELECT * FROM read_parquet('{r2.s3_url(epc_key)}');"
         )
-        con.execute(
-            "CREATE TABLE epc_addr AS "
-            "SELECT DISTINCT uprn, norm_postcode, addr_key FROM epc "
-            "WHERE norm_postcode <> '' AND addr_key <> '';"
-        )
+        con.execute(EPC_ADDR_SQL)
         con.execute("CREATE TABLE epc_uprn AS SELECT DISTINCT uprn FROM epc;")
 
         # Scope the LR side and collect already-covered UPRNs for incremental.
@@ -304,96 +464,7 @@ def build_master_parquet(
             n_candidates,
         )
 
-        # Step B: EXACT. row_number keeps one UPRN per transaction (1:1).
-        context.log.info("Step B: exact pass (deterministic key join)...")
-        con.execute(
-            f"""
-            CREATE TABLE exact_matches AS
-            SELECT transaction_id, uprn, 1.0 AS match_score, '{MATCH_EXACT}' AS match_type
-            FROM (
-                SELECT lr.transaction_id, e.uprn,
-                       row_number() OVER (
-                           PARTITION BY lr.transaction_id ORDER BY e.uprn
-                       ) AS rn
-                FROM lr
-                JOIN epc_addr e
-                  ON e.norm_postcode = lr.norm_postcode
-                 AND e.addr_key = lr.addr_key
-                WHERE lr.norm_postcode <> '' AND lr.addr_key <> ''
-            )
-            WHERE rn = 1;
-            """
-        )
-
-        n_exact_done = con.execute("SELECT count(*) FROM exact_matches;").fetchone()[0]
-        context.log.info(
-            "Step B done: %s exact match(es). Step C: fuzzy fallback on the rest...",
-            n_exact_done,
-        )
-
-        # Step C: FUZZY fallback over the exact-pass leftovers, blocked on
-        # postcode. Three bounded statements rather than one, because the
-        # single-statement form (postcode join -> row_number() per transaction
-        # -> threshold filter) ranked EVERY raw postcode pair — hundreds of
-        # millions of rows for ~22M leftover sales x ~14 EPC addresses per
-        # postcode — inside one window operator and OOM'd at the 5 GB cap on the
-        # 2026-11-15 full run. The decomposition below is result-identical:
-        #
-        #  (i)  dedupe the leftovers to DISTINCT (postcode, addr_key). A key
-        #       either exact-matches for every sale of that address or for
-        #       none, and the fuzzy candidates/score depend only on the key, so
-        #       repeat sales of the same address are scored once, not per sale.
-        #  (ii) score the postcode-blocked candidates and keep only those AT OR
-        #       ABOVE threshold — the same cut the old query applied after
-        #       ranking. Applying it before ranking is what bounds memory: the
-        #       window below ranks only the near-identical survivors. This is
-        #       the only table that could be large, and it is a base table of
-        #       the file-backed database, so the buffer manager can page it out.
-        #  (iii) best candidate per key (highest similarity, lowest uprn as the
-        #       stable tie-break — the old ORDER BY, unchanged), then fan back
-        #       out to the transactions that carry that key. The anti-join on
-        #       exact_matches is redundant by construction of (i) but keeps the
-        #       1:1 transaction_id guarantee independent of that reasoning.
-        con.execute(
-            """
-            CREATE TABLE fuzzy_keys AS
-            SELECT DISTINCT u.norm_postcode, u.addr_key
-            FROM lr u
-            ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id
-            WHERE u.norm_postcode <> '' AND u.addr_key <> '';
-            """
-        )
-        con.execute(
-            f"""
-            CREATE TABLE fuzzy_candidates AS
-            SELECT k.norm_postcode, k.addr_key, e.uprn,
-                   {_SIM}(k.addr_key, e.addr_key) AS similarity
-            FROM fuzzy_keys k
-            JOIN epc_addr e ON e.norm_postcode = k.norm_postcode
-            WHERE round({_SIM}(k.addr_key, e.addr_key), 4) >= {threshold};
-            """
-        )
-        con.execute(
-            f"""
-            CREATE TABLE fuzzy_matches AS
-            SELECT u.transaction_id,
-                   b.uprn,
-                   round(b.similarity, 4) AS match_score,
-                   '{MATCH_FUZZY}' AS match_type
-            FROM (
-                SELECT norm_postcode, addr_key, uprn, similarity
-                FROM fuzzy_candidates
-                QUALIFY row_number() OVER (
-                    PARTITION BY norm_postcode, addr_key
-                    ORDER BY similarity DESC, uprn
-                ) = 1
-            ) b
-            JOIN lr u
-              ON u.norm_postcode = b.norm_postcode
-             AND u.addr_key = b.addr_key
-            ANTI JOIN exact_matches x ON x.transaction_id = u.transaction_id;
-            """
-        )
+        match_addresses(con, context, threshold)
 
         # Everything decided this run (one row per matched transaction_id).
         con.execute(
